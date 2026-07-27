@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<salt-grain>
+ <name>ConnectivityInspectionPlugin</name>
+ <token/>
+ <hidden>false</hidden>
+ <version>0.1</version>
+ <api-version/>
+ <title>Connectivity Inspection</title>
+ <doc>Visualize connectivity information</doc>
+ <doc-url>https://github.com/iic-jku/klayout-connectivity-inspection</doc-url>
+ <url/>
+ <license>GPLv3</license>
+ <author>Martin Jan Köhler</author>
+ <author-contact/>
+ <depends>
+  <name>KLayoutPluginUtils</name>
+  <url/>
+  <version>0.27</version>
+ </depends>
+ <authored-time/>
+ <installed-time></installed-time>
+ <icon></icon>
+ <screenshot></screenshot>
+</salt-grain>
