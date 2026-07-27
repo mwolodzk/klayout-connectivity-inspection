@@ -1,0 +1,83 @@
+# KLayout Plugin: Visualize Connectivity Information
+
+<!--
+[![Watch the demo](doc/screenshot-demo-video.gif)](https://youtube.com/watch/v=TODO)
+-->
+
+* Navigate PCell instances
+* Learn about terminals / pins
+* Draw ratsnest / flywire for
+   
+This add-on can be installed through [KLayout](https://klayout.de) package manager, [see installation instructions here](#installation-instructions)
+
+## Usage
+
+### Tool activation and deactivation
+
+TODO
+
+## Installation using KLayout Package Manager
+
+<a id="installation-instructions"></a>
+
+1. From the main menu, click *Tools*→*Manage Packages* to open the package manager
+2. Locate the `ConnectivityInspectionPlugin`, double-click it to select for installation, then click *Apply*
+3. Review and close the package installation report
+4. Confirm macro execution
+
+## Technical Details about Connectivity Information
+
+Normally, a layout file (e.g. GDS) does not know about devices / terminals / pins, etc.
+
+To obtain the connectivity
+- start from a given netlist: netlist import tool stores the connectivity information
+   - our plugin [klayout-netlist-importer plugin](https://github.com/iic-jku/klayout-netlist-import) does this
+- given a layout, a LVS script is used to obtain the connectivity information
+- PDK PCells mark their pin polygons (device terminal names)
+
+To store this information, we use the KLayout properties system.
+Properties are keyed by integer, so we propose a table of dedicated well-known properties:
+
+### PCells Pin Information Properties 
+
+Pin polygons (e.g. device terminals) on the `pin` purpose layers will store information about the pins. 
+
+| Property Key                              | Property Value Type | Purpose                         | Example        | Comment                         |
+|-------------------------------------------|---------------------|---------------------------------|----------------|---------------------------------|
+| `PIN_INFO__VERSION`                       | String              | Version of Pin Info Record      | `'0.1'`        | for compatibility (migrations)  |
+| `PIN_INFO__LIB_NAME`                      | String              | Library Name                    | `'SG13_dev'`   |                                 |
+| `PIN_INFO__CELL_NAME`                     | String              | Cell Name                       | `'ntap1'`      |                                 |
+| `PIN_INFO__PIN_NAME`                      | String              | Cell Name                       | `'TIE'`        |                                 |
+| `PIN_INFO__TERM_NAME`                     | String              | Cell Name                       | `'TIE'`        |                                 |
+
+
+### Instance Information Properties
+
+#### Example 1: Internal Static Cells
+
+The `NetlistImportPlugin` stores the instance information properties on all instance objects.
+
+| Property Key                              | Property Value Type | Purpose                         | Example           | Comment                         |
+|-------------------------------------------|---------------------|---------------------------------|-------------------|---------------------------------|
+| `INSTANCE_INFO__VERSION`                  | String              | Version of Instance Info Record | `'1'`             | for compatibility (migrations)  |
+| `INSTANCE_INFO__LIB_NAME`                 | String              | Library Name                    | `''`              | empty for internal static cells |
+| `INSTANCE_INFO__CELL_NAME`                | String              | Cell Name                       | `'inverter'`      |                                 |
+| `INSTANCE_INFO__INSTANCE_NAME`            | String              | Instance Name                   | `'x1'`            |                                 |
+| `INSTANCE_INFO__HIERARCHY_PATH`           | String              | Instance FQN                    | `'TOP.x1'`        |                                 |
+| `INSTANCE_INFO__ORIGINAL_INSTANCE_PARAMS` | String              | Netlist Instance Params         |                   |                                 |   
+| `INSTANCE_INFO__LOCAL_NET_MAP`            | String              | Maps nodes to nets (cell-local) | `'{"nwell": "nwell1", "psub": "psub", "VDD": "VDD", "vin": "vin1", "vout": "vout1", "VSS": "VSS"}'` |            |
+| `INSTANCE_INFO__GLOBAL_NET_MAP`           | String              | Maps nodes to nets (flattened)  | `'{"nwell": "nwell1", "psub": "psub", "VDD": "VDD", "vin": "vin1", "vout": "vout1", "VSS": "VSS"}'` |  not implemented yet |
+
+#### Example 2: PCell
+
+| Property Key                              | Property Value Type | Purpose                         | Example           | Comment                         |
+|-------------------------------------------|---------------------|---------------------------------|-------------------|---------------------------------|
+| `INSTANCE_INFO__VERSION`                  | String              | Version of Instance Info Record | `'1'`             | for compatibility (migrations)  |
+| `INSTANCE_INFO__LIB_NAME`                 | String              | Library Name                    | `'SG13_dev'`      | empty for internal static cells |
+| `INSTANCE_INFO__CELL_NAME`                | String              | Cell Name                       | `'pmos'`          |                                 |
+| `INSTANCE_INFO__INSTANCE_NAME`            | String              | Instance Name                   | `'XM2'`           |                                 |
+| `INSTANCE_INFO__HIERARCHY_PATH`           | String              | Instance FQN                    | `'inverter.XM2'`  |                                 |
+| `INSTANCE_INFO__ORIGINAL_INSTANCE_PARAMS` | String              | Netlist Instance Params         | `'{"w": "120.0u", "l": "1.0u", "ng": "20", "m": "1", "mm_ok": "1"}'`                  |                                 |   
+| `INSTANCE_INFO__LOCAL_NET_MAP`            | String              | Maps nodes to nets (cell-local) | `'{"d": "vout", "g": "vin", "s": "VDD", "b": "nwell"}'` |            |
+| `INSTANCE_INFO__GLOBAL_NET_MAP`           | String              | Maps nodes to nets (flattened)  | `'{"d": "vout", "g": "vin", "s": "VDD", "b": "nwell"}'` |  not implemented yet |
+
