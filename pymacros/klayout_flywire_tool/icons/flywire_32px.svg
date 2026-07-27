@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <g fill="none" stroke="#000000" stroke-width="0.6" stroke-linecap="round">
+    <line x1="5" y1="5" x2="27" y2="27"/>
+    <line x1="5" y1="5" x2="27" y2="10"/>
+    <line x1="5" y1="5" x2="16" y2="27"/>
+    <line x1="27" y1="5" x2="5" y2="27"/>
+    <line x1="27" y1="5" x2="5" y2="13"/>
+    <line x1="27" y1="5" x2="18" y2="27"/>
+    <line x1="16" y1="4" x2="27" y2="27"/>
+    <line x1="16" y1="4" x2="5" y2="27"/>
+    <line x1="27" y1="10" x2="5" y2="27"/>
+    <line x1="5" y1="13" x2="27" y2="27"/>
+  </g>
+  <g stroke="#000000" stroke-width="0.8" stroke-linecap="round">
+    <path d="M 5 3 L 5 7 M 3 5 L 7 5"/>
+    <path d="M 27 3 L 27 7 M 25 5 L 29 5"/>
+    <path d="M 16 2 L 16 6 M 14 4 L 18 4"/>
+    <path d="M 5 25 L 5 29 M 3 27 L 7 27"/>
+    <path d="M 27 25 L 27 29 M 25 27 L 29 27"/>
+    <path d="M 27 8 L 27 12 M 25 10 L 29 10"/>
+    <path d="M 5 11 L 5 15 M 3 13 L 7 13"/>
+    <path d="M 16 25 L 16 29 M 14 27 L 18 27"/>
+    <path d="M 18 25 L 18 29 M 16 27 L 20 27"/>
+  </g>
+</svg>
