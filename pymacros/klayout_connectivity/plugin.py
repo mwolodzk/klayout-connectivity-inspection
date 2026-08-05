@@ -443,19 +443,27 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         if not opts.show_flywires:
             return
             
-        # Group all pins across the whole layout by net (term_name).
-        # NOTE: this assumes term_name is the net-level identifier that is
-        # consistent across instances (i.e. globally-relevant net names,
-        # not just PCell-local terminal names). If your design instead
-        # needs hierarchical net tracing (net names differing per instance,
-        # connected via parent-cell routing), this simple grouping is not
-        # enough -- flag this if that's the case.
+        # Group all pins across the whole layout by their actual net, using
+        # the pin->net map the netlist importer stores per-instance
+        # (INSTANCE_INFO__LOCAL_NET_MAP). term_name (the PCell-local
+        # terminal name) is only used as a fallback for instances that
+        # don't carry a net map yet, e.g. layouts imported before this
+        # property was introduced -- in that case flywires degrade back to
+        # the old (non-net-aware) grouping for just that instance.
         pins_by_net: Dict[str, List[pya.DPoint]] = {}
 
         for cell in self.conn_info.cell_infos:
             for pcell in cell.pcell_infos:
                 for pin in pcell.pin_infos:
-                    pins_by_net.setdefault(pin.term_name, []).append(pin.bbox.center())
+                    net_name = pcell.local_net_map.get(pin.name)
+                    if net_name is None:
+                        if Debugging.DEBUG:
+                            debug(f"update_markers_flywires: no net mapping for "
+                                  f"pin '{pin.name}' on instance "
+                                  f"'{pcell.inst_name}' ({pcell.cell_name}), "
+                                  f"falling back to term_name '{pin.term_name}'")
+                        net_name = pin.term_name
+                    pins_by_net.setdefault(net_name, []).append(pin.bbox.center())
 
         for net_name, points in pins_by_net.items():
             if len(points) < 2:
@@ -467,8 +475,7 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             for pt in points[1:]:
                 edge = pya.DEdge(anchor, pt)
                 m = self._line_marker(edge)
-                self.markers_flywires.append(m)
-            
+                self.markers_flywires.append(m)            
 
     def update_markers_terminals(self):
         self._clear_markers_terminals()
