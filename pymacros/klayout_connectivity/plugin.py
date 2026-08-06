@@ -35,6 +35,7 @@ from klayout_plugin_utils.layout_connectivity_info import LayoutConnectivityInfo
 from klayout_plugin_utils.str_enum_compat import StrEnum
 from klayout_plugin_utils.tech_helpers import drc_tech_grid_um
 
+from klayout_connectivity.browser import ConnectivityBrowserDialog
 from klayout_connectivity.options import ConnectivityOptions, CONFIG_KEY__CONNECTIVITY_OPTIONS
 
 #--------------------------------------------------------------------------------
@@ -95,7 +96,7 @@ class ConnectivitySetupWidget(pya.QWidget):
         self.page.refresh_pb.clicked(refresh_callback)
          
     def hideEvent(self, event):
-        self.hide_callback()
+        # self.hide_callback()
         event.accept()
         
     def update_ui_from_config(self, config: ConnectivityOptions):
@@ -129,6 +130,8 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self.register(-1000, "connectivity_visible", "Connectivity Inspection", icon_path)
   
         self.setupDock      = None
+        self.connectivity_browser_dialog = None
+        self.conn_info = None
         self.markers_flywires = []
         self.markers_terminals = []
         self.markers_instance_names = []
@@ -201,6 +204,10 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                 
             options = ConnectivityOptions.load()
             self.reset_menu(options)
+        
+            if self.layout is None:
+                return
+                
             self.refresh_connectivity_info()
     
     def setup(self, options: ConnectivityOptions):
@@ -221,6 +228,13 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             debug(f"ConnectivityPluginFactory.stop")
 
         # TODO: hide all inspector dialogs
+        if self.connectivity_browser_dialog:
+            self.connectivity_browser_dialog.close()
+            self.connectivity_browser_dialog = None
+        
+        if self.setupDock:
+            self.setupDock.hide()
+        
         
     def toggle_connectivity_panel(self, action: pya.Action):
         if Debugging.DEBUG:
@@ -278,6 +292,27 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         if Debugging.DEBUG:
             debug(f"ConnectivityPluginFactory.open_connectivity_browser")
         
+        try:
+            if self.layout is None:
+                return
+                
+            if self.conn_info is None:
+                self.refresh_connectivity_info()  # updates self.conn_info
+                
+            if self.connectivity_browser_dialog is None:
+                mw = pya.Application.instance().main_window()
+                self.connectivity_browser_dialog = ConnectivityBrowserDialog(
+                    mw, refresh_callback=self.refresh_connectivity_info
+                )
+            
+            self.connectivity_browser_dialog.update_from_conn_info(self.conn_info)
+            self.connectivity_browser_dialog.show()
+            self.connectivity_browser_dialog.raise_()
+            self.connectivity_browser_dialog.activateWindow()        
+        except Exception as e:
+            print("ConnectivityPluginFactory.open_connectivity_browser caught an exception", e)
+            traceback.print_exc()        
+        
     def on_current_view_changed(self):
         if Debugging.DEBUG:
              debug(f"ConnectivityPluginFactory.on_current_view_changed, self.view={self.view}")
@@ -328,7 +363,8 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                   f"for cell view {self.cell_view.cell_name}")
         
         try:
-            self.setup()
+            options = ConnectivityOptions.load()
+            self.setup(options)
             
             self.view.on_active_cellview_changed += self.on_active_cellview_changed
         except Exception as e:
@@ -367,6 +403,9 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self.conn_info = LayoutConnectivityInfo.for_layout_view(self.view)
         
         self.update_markers()
+        
+        if self.connectivity_browser_dialog is not None and self.connectivity_browser_dialog.isVisible():
+            self.connectivity_browser_dialog.update_from_conn_info(self.conn_info)
         
     def update_markers(self):
         self.update_markers_flywires()
@@ -557,3 +596,47 @@ class ConnectivityPluginFactory(pya.PluginFactory):
     def viewport_adjust(self, v: int) -> int:
         trans = pya.CplxTrans(self.view.viewport_trans(), self.dbu)
         return v / trans.mag
+
+#--------------------------------------------------------------------------------
+
+def on_current_view_changed():
+    try:
+      if Debugging.DEBUG:
+          debug(f"ConnectivityInspectionPlugin (GLOBAL) on_current_view_changed")
+      inst = ConnectivityPluginFactory.instance
+      EventLoop.defer(inst.on_current_view_changed)
+    except Exception as e:
+        print("ConnectivityInspectionPlugin (GLOBAL) on_current_view_changed caught an exception", e)
+        traceback.print_exc()
+    
+def on_view_created():
+    try:
+      if Debugging.DEBUG:
+          debug("ConnectivityInspectionPlugin (GLOBAL) on_view_created")
+      inst = ConnectivityPluginFactory.instance
+      EventLoop.defer(inst.on_view_created)
+    except Exception as e:
+        print("ConnectivityInspectionPlugin (GLOBAL) on_view_created caught an exception", e)
+        traceback.print_exc()
+
+
+def on_view_closed():
+    try:
+      if Debugging.DEBUG:
+          debug("ConnectivityInspectionPlugin (GLOBAL) on_view_closed")
+      inst = ConnectivityPluginFactory.instance
+      EventLoop.defer(inst.on_view_closed)
+    except Exception as e:
+        print("ConnectivityInspectionPlugin (GLOBAL) on_view_closed caught an exception", e)
+        traceback.print_exc()
+
+
+#--------------------------------------------------------------------------------
+
+# NOTE: need to keep an instance currently.
+# (will be fixed in 0.30.4, so we can pull a temporary instance)
+mw = pya.MainWindow.instance()
+
+mw.on_current_view_changed += on_current_view_changed
+mw.on_view_created += on_view_created
+mw.on_view_closed += on_view_closed

@@ -59,6 +59,7 @@ import klayout_plugin_utils.event_loop
 import klayout_plugin_utils.layout_connectivity_info
 import klayout_plugin_utils.object_description
 import klayout_plugin_utils.str_enum_compat
+import klayout_connectivity.browser
 import klayout_connectivity.plugin
 import klayout_connectivity.options
 
@@ -68,6 +69,7 @@ reload(klayout_plugin_utils.event_loop)
 reload(klayout_plugin_utils.layout_connectivity_info)
 reload(klayout_plugin_utils.object_description)
 reload(klayout_plugin_utils.str_enum_compat)
+reload(klayout_connectivity.browser)
 reload(klayout_connectivity.plugin)
 reload(klayout_connectivity.options)
 
@@ -83,5 +85,5 @@ if 'ConnectivityPluginFactory_Singleton_Instance' in globals() and \
     ConnectivityPluginFactory_Singleton_Instance = None
     
 ConnectivityPluginFactory_Singleton_Instance = ConnectivityPluginFactory()
-</text>
+ConnectivityPluginFactory.instance = ConnectivityPluginFactory_Singleton_Instance</text>
 </klayout-macro>
