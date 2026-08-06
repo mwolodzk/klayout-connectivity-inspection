@@ -378,11 +378,13 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                      position: pya.DPoint, 
                      size: float = 12.0, 
                      text_color: int = 0xffffff,
-                     frame_color: int = 0xff0000) -> pya.Marker:
+                     frame_color: int = 0xff0000,
+                     halign: pya.HAlign = pya.HAlign.HAlignCenter,
+                     valign: pya.VAlign = pya.VAlign.VAlignCenter) -> pya.Marker:
         m = pya.Marker(self.view)
         dtext = pya.DText(text, position.x, position.y)
-        dtext.halign = pya.HAlign.HAlignCenter
-        dtext.valign = pya.VAlign.VAlignCenter
+        dtext.halign = halign
+        dtext.valign = valign
         
         # NOTE: size only works for font numbers >= 1
         ### dtext.size = self.viewport_adjust(size / 10-6)
@@ -526,9 +528,30 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                 if union_box is None:
                     continue
 
-                label_pos = pya.DPoint(union_box.center().x, union_box.top)
-                label = pcell.inst_name or pcell.cell_name
-                tm = self._text_marker(label, label_pos)
+                INSTANCE_NAME_Y_GAP_UM = 0.1
+                label_pos = pya.DPoint(union_box.center().x, union_box.top + INSTANCE_NAME_Y_GAP_UM)
+
+                # FQ instance name: the netlist importer's hierarchy path
+                # (e.g. "top.X3.X1"); fall back to the local instance name
+                # for layouts imported before this property existed.
+                fq_inst_name = pcell.hierarchy_path or pcell.inst_name
+
+                # FQ cell name: prefer the schematic/netlist device name
+                # (INSTANCE_INFO__CELL_NAME / __LIB_NAME, e.g. "sg13_lv.nmos"
+                # as it appears in xschem), since that's what a designer
+                # recognizes -- not the PCell's PDK-internal name. Fall back
+                # to the PCell name for layouts imported before these
+                # properties existed.
+                if pcell.netlist_cell_name:
+                    fq_cell_name = (f"{pcell.netlist_lib_name}.{pcell.netlist_cell_name}"
+                                     if pcell.netlist_lib_name else pcell.netlist_cell_name)
+                else:
+                    fq_cell_name = f"{pcell.lib_name}.{pcell.cell_name}" if pcell.lib_name else pcell.cell_name
+                
+                label = f"{fq_inst_name} ({fq_cell_name})"
+                tm = self._text_marker(label, label_pos, 
+                                       text_color=0xffffff, frame_color=0xffffff,
+                                       halign=pya.HAlign.HAlignCenter, valign=pya.VAlign.VAlignBottom)
                 self.markers_instance_names.append(tm)        
 
     def viewport_adjust(self, v: int) -> int:
