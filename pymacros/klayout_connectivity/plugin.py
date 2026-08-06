@@ -191,14 +191,14 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         menu.insert_item(f"tools_menu.connectivity_menu.#2", f"open_connectivity_browser", action)
     
     def configure(self, name: str, value: str) -> bool:
-        if Debugging.DEBUG:
-            debug(f"ConnectivityPluginFactory.configure: {name}")
-            
         # NOTE:
         #   main menu actions update directly
         #   this gets triggered when the config is saved
         
         if name == CONFIG_KEY__CONNECTIVITY_OPTIONS:
+            if Debugging.DEBUG:
+                debug(f"ConnectivityPluginFactory.configure: {name}")
+                
             options = ConnectivityOptions.load()
             self.reset_menu(options)
             self.refresh_connectivity_info()
