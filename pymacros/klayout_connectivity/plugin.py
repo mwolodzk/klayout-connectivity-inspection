@@ -32,6 +32,7 @@ from klayout_plugin_utils.debugging import debug, Debugging
 from klayout_plugin_utils.editor_options import EditGridKind
 from klayout_plugin_utils.event_loop import EventLoop
 from klayout_plugin_utils.layout_connectivity_info import LayoutConnectivityInfo
+from klayout_plugin_utils.qt_helpers import qmessagebox_critical
 from klayout_plugin_utils.str_enum_compat import StrEnum
 from klayout_plugin_utils.tech_helpers import drc_tech_grid_um
 
@@ -293,7 +294,9 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             debug(f"ConnectivityPluginFactory.open_connectivity_browser")
         
         try:
-            if self.layout is None:
+            cv = pya.CellView.active()
+            if cv is None or cv.cell is None:
+                qmessagebox_critical('Error', 'Connectivity Inspection failed', 'No layout open to inspect')
                 return
                 
             if self.conn_info is None:
@@ -400,6 +403,11 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self._clear_markers_field('markers_instance_names')
 
     def refresh_connectivity_info(self):
+        cv = pya.CellView.active()
+        if cv is None or cv.cell is None:
+            qmessagebox_critical('Error', 'Connectivity Inspection failed', 'No layout open to analyze')
+            return
+        
         self.conn_info = LayoutConnectivityInfo.for_layout_view(self.view)
         
         self.update_markers()
