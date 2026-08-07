@@ -138,6 +138,12 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             print("ConnectivityPluginFactory.ctor caught an exception", e)
             traceback.print_exc()
 
+    @classmethod
+    def instance(cls) -> cls:
+        if 'ConnectivityPluginFactory_Singleton_Instance' in globals():
+            global ConnectivityPluginFactory_Singleton_Instance
+            return ConnectivityPluginFactory_Singleton_Instance
+    
     @property
     def view(self) -> pya.LayoutView:
         return pya.LayoutView.current()
