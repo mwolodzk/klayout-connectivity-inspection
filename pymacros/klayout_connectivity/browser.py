@@ -297,18 +297,27 @@ class ConnectivityBrowserDialog(pya.QDialog):
 
         bottom = pya.QHBoxLayout()
         self.refresh_pb = pya.QPushButton("Refresh")
-        self.refresh_pb.clicked.connect(self.on_refresh)
         bottom.addWidget(self.refresh_pb)
         bottom.addStretch()
         self.close_pb = pya.QPushButton("Close")
-        self.close_pb.clicked.connect(self.close)
         bottom.addWidget(self.close_pb)
         layout.addLayout(bottom)
+
+        self.refresh_pb.clicked.connect(self.on_refresh)
+        self.close_pb.clicked.connect(self.on_close)
 
     def update_from_conn_info(self, conn_info: LayoutConnectivityInfo):
         self.by_net_page.update_from_conn_info(conn_info)
         self.by_instance_page.update_from_conn_info(conn_info)
 
+    def on_close(self):
+        if Debugging.DEBUG:
+            debug("ConnectivityBrowserDialog.on_close")
+        try:
+            self.close()
+        except Exception as e:
+            traceback.print_exc()
+    
     def on_refresh(self):
         if Debugging.DEBUG:
             debug("ConnectivityBrowserDialog.on_refresh")
