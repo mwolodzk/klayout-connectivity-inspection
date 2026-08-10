@@ -52,6 +52,10 @@ class ConnectivitySetupDock(pya.QDockWidget):
         self.setWidget(self.setupWidget)
         self.setWindowTitle("Connectivity Inspection")
 
+    def closeEvent(self, event):
+        self.setupWidget.hide_callback()
+        event.accept()
+    
     def update_ui_from_config(self, config: ConnectivityOptions):
         self.setupWidget.update_ui_from_config(config)
     
@@ -93,10 +97,6 @@ class ConnectivitySetupWidget(pya.QWidget):
         ):
             cbx.toggled(self.save_config)        
          
-    def hideEvent(self, event):
-        # self.hide_callback()
-        event.accept()
-        
     def update_ui_from_config(self, config: ConnectivityOptions):
         cbx_and_value = (
             (self.page.show_connectivity_cbx, config.show_connectivity_info),
