@@ -153,13 +153,15 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         return pya.CellView.active()
 
     @property
-    def layout(self) -> pya.Layout:
-        return self.cell_view.layout()
-
+    def layout(self) -> Optional[pya.Layout]:
+        cell_view = self.cell_view
+        return cell_view.layout() if cell_view else None
+            
     @property
-    def tech(self) -> pya.Technology:
-        return self.layout.technology()
-
+    def tech(self) -> Optional[pya.Technology]:
+        layout = self.layout
+        return layout.technology() if layout else None
+    
     @property
     def options(self) -> ConnectivityOptions:
         o = ConnectivityOptions.load()
@@ -356,20 +358,18 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         if Debugging.DEBUG:
              debug("ConnectivityPluginFactory.on_view_closed")
       
-    def on_active_cellview_changed(self) -> bool:
-        if Debugging.DEBUG:
-            debug(f"ConnectivityPluginFactory.on_active_cellview_changed: {self.cell_view.cell_name}")
-        
     def layout_changed(self):
         if Debugging.DEBUG:
+            cell_view = self.cell_view
             debug(f"ConnectivityPluginFactory.layout_changed, "
-                  f"for cell view {self.cell_view.cell_name}")
+                  f"for cell view {cell_view.cell_name if cell_view else 'none'}")
+        
+        if self.view is None or self.layout is None:
+            return
         
         try:
             options = ConnectivityOptions.load()
             self.setup(options)
-            
-            self.view.on_active_cellview_changed += self.on_active_cellview_changed
         except Exception as e:
             print("ConnectivityPluginFactory.layout_changed caught an exception", e)
             traceback.print_exc()        
