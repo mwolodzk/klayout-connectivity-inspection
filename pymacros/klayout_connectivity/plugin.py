@@ -130,10 +130,8 @@ class ConnectivityPluginFactory(pya.PluginFactory):
     def __init__(self):
         super().__init__()        
         
-        icon_path = os.path.join(path_containing_this_script, 'icons', 'flywire_32px.png')
-        
         self.has_tool_entry = False
-        self.register(-1000, "connectivity_visible", "Connectivity Inspection", icon_path)
+        self.register(-1000, "connectivity_visible", "Connectivity Inspection", self.icon_path)
   
         self.setupDock      = None
         self.connectivity_browser_dialog = None
@@ -151,6 +149,11 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         except Exception as e:
             print("ConnectivityPluginFactory.ctor caught an exception", e)
             traceback.print_exc()
+
+    @property
+    def icon_path(self) -> str:
+        p = os.path.join(path_containing_this_script, 'icons', 'flywire_32px.png')
+        return p
 
     @classmethod
     def instance(cls) -> cls:
@@ -188,7 +191,7 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         mw = pya.MainWindow.instance()
         menu = mw.menu()
         
-        menu.insert_separator("tools_menu.end", "connectivity_separator")
+        self._append_separator_if_needed(menu, "tools_menu.end", "connectivity_separator")
         menu.insert_menu("tools_menu.end", "connectivity_menu",  "Connectivity Inspection")
         
         action = pya.Action()
@@ -213,10 +216,37 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         menu.insert_item(f"tools_menu.connectivity_menu.#2", f"open_connectivity_browser", action)
         self._menu_action_open_connectivity_browser = action
 
+        # add additional toolbar menu item to toggle flywire functionality
+        
+        action = pya.Action()
+        action.title = "Flywire"
+        action.tool_tip = "Show the Connectivity Inspection panel and Connectivity Overlay"
+        action.icon = self.icon_path
+        action.checkable = True
+        action.checked = options.show_connectivity_info
+        action.on_triggered += lambda a=action: self.toggle_connectivity_overlay(a)
+        
+        self._append_separator_if_needed(menu, "@toolbar.end", "connectivity_overlay_separator")
+        menu.insert_item("@toolbar.end", "toggle_connectivity_overlay", action)
+        self._toolbar_action_toggle_connectivity_overlay = action
+        
+    def _append_separator_if_needed(self,
+                                    menu: pya.AbstractMenu,
+                                    parent_path: str,
+                                    separator_name: str):
+        items = menu.items(parent_path)
+        if items:
+            last_item_path = f"{parent_path}.{items[-1]}"
+            if menu.is_separator(last_item_path):
+                return
+    
+        menu.insert_separator(f"{parent_path}.end", separator_name)        
+        
     def update_menu(self, options: ConnectivityOptions):
         self._menu_action_show_connectivity_panel.checked = options.show_connectivity_panel
         self._menu_action_show_connectivity_info.checked = options.show_connectivity_info
-    
+        self._toolbar_action_toggle_connectivity_overlay.checked = options.show_connectivity_info
+        
     def configure(self, name: str, value: str) -> bool:
         if name != CONFIG_KEY__CONNECTIVITY_OPTIONS:
             return False
@@ -260,6 +290,21 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         if self.setupDock:
             self.setupDock.hide()
         
+    def toggle_connectivity_overlay(self, action: pya.Action):
+        if Debugging.DEBUG:
+            debug(f"ConnectivityPluginFactory.toggle_connectivity_overlay: {action.checked}")
+    
+        options = ConnectivityOptions.load()
+    
+        if action.checked:
+            # Activating the toolbar button presents both the panel and overlay.
+            options.show_connectivity_panel = True
+            options.show_connectivity_info = True
+        else:
+            # Deactivating it leaves the panel open, but hides the overlay.
+            options.show_connectivity_info = False
+    
+        options.save()    
         
     def toggle_connectivity_panel(self, action: pya.Action):
         if Debugging.DEBUG:
