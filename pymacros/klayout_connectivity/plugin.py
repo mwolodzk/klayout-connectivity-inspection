@@ -19,22 +19,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os 
-import math
-import sys
 import traceback
 from typing import *
 
 import pya
 
 from klayout_plugin_utils.debugging import debug, Debugging
-from klayout_plugin_utils.editor_options import EditGridKind
 from klayout_plugin_utils.event_loop import EventLoop
 from klayout_plugin_utils.layout_connectivity_info import LayoutConnectivityInfo
 from klayout_plugin_utils.qt_helpers import qmessagebox_critical
-from klayout_plugin_utils.str_enum_compat import StrEnum
-from klayout_plugin_utils.tech_helpers import drc_tech_grid_um
 
 from klayout_connectivity.browser import ConnectivityBrowserDialog
 from klayout_connectivity.options import ConnectivityOptions, CONFIG_KEY__CONNECTIVITY_OPTIONS
