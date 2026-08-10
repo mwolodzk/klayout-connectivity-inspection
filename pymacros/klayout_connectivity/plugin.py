@@ -82,35 +82,46 @@ class ConnectivitySetupWidget(pya.QWidget):
         self._layout.addWidget(self.page)
         self.setLayout(self._layout)
 
-        self.page.show_connectivity_cbx.clicked(self.save_config)
         self.page.open_connectivity_browser_pb.clicked(open_connectivity_browser_callback)
-         
-        self.page.show_flywires_cbx.stateChanged(self.save_config)
-        self.page.show_instance_names_cbx.stateChanged(self.save_config)
-        self.page.show_terminals_cbx.stateChanged(self.save_config)
         self.page.refresh_pb.clicked(refresh_callback)
+
+        for cbx in (
+            self.page.show_connectivity_cbx,
+            self.page.show_flywires_cbx,
+            self.page.show_instance_names_cbx,
+            self.page.show_terminals_cbx,
+        ):
+            cbx.toggled(self.save_config)        
          
     def hideEvent(self, event):
         # self.hide_callback()
         event.accept()
         
     def update_ui_from_config(self, config: ConnectivityOptions):
-        self.page.show_connectivity_cbx.setChecked(config.show_connectivity_info)
-        self.page.show_flywires_cbx.setChecked(config.show_flywires)
-        self.page.show_instance_names_cbx.setChecked(config.show_instance_names)
-        self.page.show_terminals_cbx.setChecked(config.show_terminals)
-        
-    def config_from_ui(self) -> ConnectivityOptions:
-        o = ConnectivityOptions(
-            show_connectivity_panel=True,
-            show_connectivity_info=self.page.show_connectivity_cbx.checked,
-            show_flywires=self.page.show_flywires_cbx.checked,
-            show_instance_names=self.page.show_instance_names_cbx.checked,
-            show_terminals=self.page.show_terminals_cbx.checked,
+        cbx_and_value = (
+            (self.page.show_connectivity_cbx, config.show_connectivity_info),
+            (self.page.show_flywires_cbx, config.show_flywires),
+            (self.page.show_instance_names_cbx, config.show_instance_names),
+            (self.page.show_terminals_cbx, config.show_terminals),
         )
+        
+        previous = [(cbx, cbx.blockSignals(True)) for cbx, _ in cbx_and_value]
+        try:
+            for cbx, checked in cbx_and_value:
+                cbx.setChecked(checked)
+        finally:
+            for cbx, was_blocked in previous:
+                cbx.blockSignals(was_blocked)            
+    
+    def config_from_ui(self) -> ConnectivityOptions:
+        o = ConnectivityOptions.load()
+        o.show_connectivity_info = self.page.show_connectivity_cbx.checked
+        o.show_flywires = self.page.show_flywires_cbx.checked
+        o.show_instance_names = self.page.show_instance_names_cbx.checked
+        o.show_terminals = self.page.show_terminals_cbx.checked
         return o
 
-    def save_config(self):
+    def save_config(self, _checked: bool = False):
         o = self.config_from_ui()
         o.save()
 
@@ -131,8 +142,11 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self.markers_terminals = []
         self.markers_instance_names = []
         
+        self._waiting_for_file_open = False
+        
         try:
             options = ConnectivityOptions.load()
+            self.init_menu(options)
             self.setup(options)
         except Exception as e:
             print("ConnectivityPluginFactory.ctor caught an exception", e)
@@ -167,22 +181,23 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         o = ConnectivityOptions.load()
         return o
 
-    def reset_menu(self, options: ConnectivityOptions):
+    def init_menu(self, options: ConnectivityOptions):
         if Debugging.DEBUG:
-            debug("ConnectivityPluginFactory.reset_menu")
+            debug("ConnectivityPluginFactory.init_menu")
         
         mw = pya.MainWindow.instance()
         menu = mw.menu()
         
         menu.insert_separator("tools_menu.end", "connectivity_separator")
         menu.insert_menu("tools_menu.end", "connectivity_menu",  "Connectivity Inspection")
-
+        
         action = pya.Action()
         action.title = "Show Connectivity Panel"
         action.checkable = True
         action.checked = options.show_connectivity_panel
         action.on_triggered += lambda a=action: self.toggle_connectivity_panel(a)
         menu.insert_item(f"tools_menu.connectivity_menu.#0", f"show_connectivity_panel", action)
+        self._menu_action_show_connectivity_panel = action
 
         action = pya.Action()
         action.title = "Show Connectivity Information"
@@ -190,34 +205,41 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         action.checked = options.show_connectivity_info
         action.on_triggered += lambda a=action: self.toggle_connectivity_info(a)
         menu.insert_item(f"tools_menu.connectivity_menu.#1", f"show_connectivity_info", action)
+        self._menu_action_show_connectivity_info = action
     
         action = pya.Action()
         action.title = "Open Connectivity Browser"
         action.on_triggered += lambda: self.open_connectivity_browser()
         menu.insert_item(f"tools_menu.connectivity_menu.#2", f"open_connectivity_browser", action)
+        self._menu_action_open_connectivity_browser = action
+
+    def update_menu(self, options: ConnectivityOptions):
+        self._menu_action_show_connectivity_panel.checked = options.show_connectivity_panel
+        self._menu_action_show_connectivity_info.checked = options.show_connectivity_info
     
     def configure(self, name: str, value: str) -> bool:
-        # NOTE:
-        #   main menu actions update directly
-        #   this gets triggered when the config is saved
+        if name != CONFIG_KEY__CONNECTIVITY_OPTIONS:
+            return False
+            
+        if Debugging.DEBUG:
+            debug(f"ConnectivityPluginFactory.configure: {name}")
+            
+        options = ConnectivityOptions.load()
         
-        if name == CONFIG_KEY__CONNECTIVITY_OPTIONS:
-            if Debugging.DEBUG:
-                debug(f"ConnectivityPluginFactory.configure: {name}")
-                
-            options = ConnectivityOptions.load()
-            self.reset_menu(options)
-        
-            if self.layout is None:
-                return
-                
+        # Synchronize all visual representations of persisted state.
+        self.update_menu(options)
+        self.update_connectivity_panel(options)
+    
+        if self.layout is not None:
             self.refresh_connectivity_info()
+            
+        return True
     
     def setup(self, options: ConnectivityOptions):
         if Debugging.DEBUG:
             debug(f"ConnectivityPluginFactory.setup")
 
-        self.reset_menu(options)
+        self.update_menu(options)
 
         if self.layout is None:
             return
@@ -246,11 +268,6 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         o = ConnectivityOptions.load()
         o.show_connectivity_panel = action.checked
         o.save()
-        
-        if self.layout is None:
-            return
-
-        self.update_connectivity_panel(o)
 
     def hide_connectivity_panel(self):
         """Called e.g. if (x) is clicked on the panel"""
@@ -261,11 +278,6 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         o = ConnectivityOptions.load()
         o.show_connectivity_panel = False
         o.save()
-
-        if self.setupDock:
-            self.setupDock.hide()
-            
-        self.reset_menu(o)
 
     def update_connectivity_panel(self, options: ConnectivityOptions):
         if options.show_connectivity_panel:
@@ -287,9 +299,6 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         o = ConnectivityOptions.load()
         o.show_connectivity_info = action.checked
         o.save()
-        
-        self.refresh_connectivity_info()
-        self.update_connectivity_panel(o)
         
     def open_connectivity_browser(self):
         if Debugging.DEBUG:
@@ -329,14 +338,28 @@ class ConnectivityPluginFactory(pya.PluginFactory):
 
         try:
             if self.layout is None:
-                if Debugging.DEBUG:
-                    debug("ConnectivityPluginFactory.on_current_view_changed: no layout yet, register callback")
-                self.view.on_file_open.connect(self.layout_changed)
+                if not self._waiting_for_file_open:
+                    if Debugging.DEBUG:
+                        debug(
+                            "ConnectivityPluginFactory.on_current_view_changed: "
+                            "waiting for a layout file"
+                        )
+            
+                    self.view.on_file_open.connect(self._on_file_open)
+                    self._waiting_for_file_open = True
+                return
             else:
                 self.layout_changed()
         except Exception as e:
             print("ConnectivityPluginFactory.on_current_view_changed caught an exception", e)
             traceback.print_exc()
+        
+    def _on_file_open(self):
+        if self.view is not None and self._waiting_for_file_open:
+            self.view.on_file_open.disconnect(self._on_file_open)
+    
+        self._waiting_for_file_open = False
+        self.layout_changed()
         
     def on_view_created(self):
         if Debugging.DEBUG:
@@ -345,14 +368,22 @@ class ConnectivityPluginFactory(pya.PluginFactory):
 
         # NOTE: sometimes when starting klayout -e directly with a layout file
         #       on_current_view_changed won't get emitted
-        mw = pya.MainWindow.instance()
-        menu = mw.menu()
-        if not menu.is_menu("tools_menu.connectivity_menu"):
-            if Debugging.DEBUG:
-                debug(f"ConnectivityPluginFactory.on_view_created, no menu found yet, "
-                      f"seems we are in a startup situation, "
-                      f"so we'll create the menu now")
-            self.setup()
+        try:
+            options = ConnectivityOptions.load()
+            
+            mw = pya.MainWindow.instance()
+            menu = mw.menu()
+            if not menu.is_menu("tools_menu.connectivity_menu"):
+                if Debugging.DEBUG:
+                    debug(f"ConnectivityPluginFactory.on_view_created, no menu found yet, "
+                          f"seems we are in a startup situation, "
+                          f"so we'll create the menu now")
+                self.init_menu(options)
+
+            self.setup(options)
+        except Exception as e:
+            print("ConnectivityPluginFactory.on_view_created caught an exception", e)
+            traceback.print_exc()        
 
     def on_view_closed(self):
         if Debugging.DEBUG:
@@ -609,20 +640,20 @@ class ConnectivityPluginFactory(pya.PluginFactory):
 
 def on_current_view_changed():
     try:
-      if Debugging.DEBUG:
-          debug(f"ConnectivityInspectionPlugin (GLOBAL) on_current_view_changed")
-      inst = ConnectivityPluginFactory.instance
-      EventLoop.defer(inst.on_current_view_changed)
+        if Debugging.DEBUG:
+            debug(f"ConnectivityInspectionPlugin (GLOBAL) on_current_view_changed")
+        inst = ConnectivityPluginFactory.instance
+        EventLoop.defer(inst.on_current_view_changed)
     except Exception as e:
         print("ConnectivityInspectionPlugin (GLOBAL) on_current_view_changed caught an exception", e)
         traceback.print_exc()
     
 def on_view_created():
     try:
-      if Debugging.DEBUG:
-          debug("ConnectivityInspectionPlugin (GLOBAL) on_view_created")
-      inst = ConnectivityPluginFactory.instance
-      EventLoop.defer(inst.on_view_created)
+        if Debugging.DEBUG:
+            debug("ConnectivityInspectionPlugin (GLOBAL) on_view_created")
+        inst = ConnectivityPluginFactory.instance
+        EventLoop.defer(inst.on_view_created)
     except Exception as e:
         print("ConnectivityInspectionPlugin (GLOBAL) on_view_created caught an exception", e)
         traceback.print_exc()
