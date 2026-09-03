@@ -788,6 +788,13 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         """
         self.flight_lines_mode = VisibilityMode(mode)
         self.flight_lines_selected = tuple(selected)
+        # Keep the mode consistent with update_markers_flywires(), which reads
+        # persisted panel options on every refresh.  Without this write an API
+        # request for Selected Nets/Pins/Instances was immediately overwritten
+        # by the previous combo-box value.
+        options = self.options
+        options.flight_lines_mode = self.flight_lines_mode.value
+        options.save()
         self.update_markers_flywires()
 
     def update_markers_terminals(self):

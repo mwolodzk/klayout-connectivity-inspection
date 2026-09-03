@@ -129,3 +129,23 @@ class SdlSnapshotTest(unittest.TestCase):
             }]}), encoding="utf-8")
             with self.assertRaises(SnapshotFormatError):
                 load_flight_lines_sidecar(sidecar)
+
+    def test_stale_snapshot_never_renders_flight_lines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sidecar = Path(directory) / "stale.sdl.json"
+            sidecar.write_text(json.dumps({"snapshot": {
+                "stale": True,
+                "findings": [{
+                    "finding_id": "o", "kind": "OPEN", "message": "old",
+                    "expected_net": "N", "component_ids": ["a", "b"],
+                    "pin_ids": ["TOP/A/P", "TOP/B/P"],
+                }],
+                "flight_lines": [{
+                    "line_id": "old", "expected_net": "N",
+                    "component_a": "a", "component_b": "b",
+                    "pin_a": "TOP/A/P", "pin_b": "TOP/B/P",
+                    "start": [0, 0], "end": [1, 0],
+                }],
+            }}), encoding="utf-8")
+
+            self.assertEqual(load_flight_lines_sidecar(sidecar), ())

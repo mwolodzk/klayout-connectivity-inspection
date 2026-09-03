@@ -58,6 +58,10 @@ def load_flight_lines_sidecar(sidecar_path: Path) -> Tuple[SnapshotFlightLine, .
     snapshot = _read_snapshot(sidecar_path)
     if snapshot is None:
         return ()
+    # A stale extraction can still be reviewed in Findings, but its geometry
+    # must not guide routing after either the layout or source has changed.
+    if bool(snapshot.get("stale", False)):
+        return ()
     raw_findings = snapshot.get("findings", ())
     if not isinstance(raw_findings, list):
         raise SnapshotFormatError("SDL sidecar 'findings' must be a list")
