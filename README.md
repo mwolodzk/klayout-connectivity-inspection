@@ -15,6 +15,10 @@ be limited to selected nets, pins or instances. Static imported cells with
 `INSTANCE_INFO__*` metadata and preserved terminal labels are included beside
 PCells. Layouts without PCells or importer metadata take a non-expanding fast
 path so large streamed hierarchies do not freeze the editor.
+
+The complete Polish workflow is available inside KLayout under *Tools* →
+*Connectivity Inspection* → *SDL / CAS User Manual...*. It covers every
+import field, batch analysis, flight-line modes and the Findings/CAS browser.
    
 This add-on can be installed through [KLayout](https://klayout.de) package manager, [see installation instructions here](#installation-instructions)
 

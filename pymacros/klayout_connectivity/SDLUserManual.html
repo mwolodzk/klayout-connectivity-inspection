@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" />
+<title>SDL / CAS — podręcznik użytkownika</title>
+<style>
+ body { font-family: sans-serif; color: #202124; line-height: 1.42; margin: 24px; }
+ h1 { color: #174a7e; margin-bottom: 4px; }
+ h2 { color: #245f91; border-bottom: 1px solid #c8d7e5; padding-bottom: 4px; }
+ h3 { color: #365f7d; }
+ code { background: #eef3f7; padding: 1px 4px; }
+ .ok { background: #e9f6ec; border-left: 4px solid #2e7d32; padding: 9px; }
+ .warn { background: #fff5dd; border-left: 4px solid #c77c02; padding: 9px; }
+ .flow { font-size: 110%; background: #edf5fc; padding: 10px; text-align: center; }
+ table { border-collapse: collapse; width: 100%; }
+ th, td { border: 1px solid #c8d7e5; padding: 6px; vertical-align: top; }
+ th { background: #e8f0f7; }
+</style>
+</head>
+<body>
+<h1>SDL / CAS — podręcznik użytkownika</h1>
+<p>Netlist Import + Connectivity Inspection, wersja SDL v1</p>
+<p class="flow"><b>SPICE/CDL → import i placement → zapis OAS → LVS/adapter → Findings + flight-lines → CAS</b></p>
+
+<h2 id="quick-start">1. Szybki start</h2>
+<ol>
+ <li>Uruchom właściwy profil KLayout i otwórz albo utwórz layout.</li>
+ <li>Wybierz <b>File → Import → Netlist</b>.</li>
+ <li>W <b>Source File</b> wskaż netlistę SPICE/CDL, sprawdź mapowanie i placement, następnie kliknij <b>Import</b>.</li>
+ <li>Zapisz layout jako OASIS. OAS zachowuje wymagane właściwości <code>INSTANCE_INFO__*</code>.</li>
+ <li>Uruchom batch LVS/SDL właściwy dla PDK. Ma on utworzyć aktualny <code>&lt;layout&gt;.sdl.json</code> i <code>&lt;layout&gt;.sdl.lyrdb</code>.</li>
+ <li>Wybierz <b>Tools → Connectivity Inspection → Show Connectivity Panel</b>, ustaw <b>Flight-lines: All Opens</b> i kliknij <b>Refresh</b>.</li>
+ <li>Kliknij <b>Open Connectivity Browser</b>. To jest okno CAS tego przepływu; wyniki znajdują się w zakładce <b>Findings</b>.</li>
+</ol>
+<div class="warn"><b>Uwaga:</b> plik <code>.sch</code> trzeba najpierw znetlistować w Xschem do SPICE/CDL. Nie używaj GDS jako nośnika właściwości instancji SDL.</div>
+
+<h2 id="import">2. Jak wypełnić Netlist Import</h2>
+<h3>Netlist Source</h3>
+<table>
+ <tr><th>Pole</th><th>Wartość</th></tr>
+ <tr><td>Source File</td><td>Pełna ścieżka do pliku <code>.cdl</code>, <code>.cir</code>, <code>.spi</code> albo <code>.spice</code>.</td></tr>
+ <tr><td>Format</td><td><b>SPICE Netlist (Simulation format)</b>.</td></tr>
+ <tr><td>Hierarchy</td><td><b>Preserve Hierarchy</b>, aby zachować subcircuity i pełne ścieżki instancji.</td></tr>
+ <tr><td>Import Mode — komórka</td><td>Zwykle <b>New Cell</b>; gotową komórkę można wskazać jako <b>External Static Cell</b>.</td></tr>
+ <tr><td>Import Mode — instancja</td><td><b>Tech Cell Mapping</b> dla elementu PDK, <b>Netlist Cell</b> dla innego subcircuitu albo <b>External Static Cell</b>.</td></tr>
+</table>
+
+<h3>Tech Cell Mapping</h3>
+<p>Zacznij od <b>Restore Tech Defaults</b>. Dla każdego modelu sprawdź <b>Target Cell Type</b>, <b>Target Library</b>, <b>Target Cell</b>, <b>Parameters</b>, <b>Multiplier</b> i <b>Netlist Node Order</b>. Kolejność węzłów musi odpowiadać terminalom modelu; inaczej wynik może zawierać fałszywe opens albo shorts.</p>
+
+<h3>Layout</h3>
+<ul>
+ <li><b>Place first instance at X/Y</b> — początek placementu w µm.</li>
+ <li><b>Maximum Number of Columns</b> — liczba kolumn.</li>
+ <li><b>Fixed Grid Mode with Pitch</b> — powtarzalny raster.</li>
+ <li><b>Packed Mode with Padding</b> — placement bez nakładania bboxów, z odstępem.</li>
+</ul>
+<p><b>Save Runset</b>, <b>Load Runset</b> i <b>Recent</b> zapisują albo odtwarzają cały formularz. Po <b>Import</b> przeczytaj raport: nieznany model, niewłaściwa liczba terminali lub zła biblioteka wymagają poprawienia mapy.</p>
+
+<h2 id="analysis">3. Analiza expected kontra observed</h2>
+<p>Importer dostarcza expected connectivity i binding instancji, a LVS/adapter PDK dostarcza observed connectivity. Analiza jest wykonywana w osobnym procesie KLayout batch, więc edytor pozostaje responsywny. Wynik trafia do sidecara i Report Database, bez modyfikowania geometrii layoutu.</p>
+<p class="ok">Przed oglądaniem linii sprawdź, że snapshot ma <code>stale=false</code>. Po zmianie layoutu albo netlisty wynik staje się nieaktualny i analizę trzeba powtórzyć.</p>
+
+<h2 id="cas">4. Flight-lines oraz Findings/CAS</h2>
+<ol>
+ <li>Otwórz <b>Tools → Connectivity Inspection → Show Connectivity Panel</b>.</li>
+ <li>Włącz <b>Show Connectivity Information</b> i <b>Flywires</b>.</li>
+ <li>Wybierz tryb <b>Flight-lines</b>: <b>Off</b>, <b>Selected Nets</b>, <b>Selected Pins</b>, <b>Selected Instances</b> albo <b>All Opens</b>.</li>
+ <li>Kliknij <b>Refresh</b>, potem <b>Open Connectivity Browser</b>.</li>
+ <li>W zakładce <b>Findings</b> filtruj typy, zaznaczaj wiele wpisów oraz używaj zoom, highlight i cross-probe. Dostępne statusy to <b>active</b>, <b>visited</b> i <b>waived</b>.</li>
+</ol>
+<p>Flight-lines są rysowane wyłącznie dla rzeczywistych <b>OPEN</b>. Sieć złożona z <code>k</code> rozłącznych komponentów otrzymuje <code>k-1</code> linii MST pomiędzy najbliższymi access points. <b>SHORT</b>, <b>WRONG_NET</b>, <b>UNBOUND</b>, <b>MISSING</b>, <b>MASTER_MISMATCH</b> i <b>PARAMETER_MISMATCH</b> są raportowane w Findings, lecz nie generują linii trasowania.</p>
+
+<h2 id="pdk">5. Profile PDK</h2>
+<ul>
+ <li><b>SG13G2 / iic-ihp:</b> pełny przepływ jest dostępny w profilu produkcyjnym.</li>
+ <li><b>XH018:</b> importer SDL pozostaje w profilu developerskim do czasu ukończenia mapy PDK. Static cell <code>qpvb</code> ma wiarygodne piny C/B/E; niektóre MOS-y PRIMLIB nie zachowują jednoznacznych D/G/S/B.</li>
+</ul>
+
+<h2 id="diagnostics">6. Diagnostyka</h2>
+<ul>
+ <li>Brak wszystkich linii: sprawdź sidecar, <code>stale</code>, opcję <b>Flywires</b> i tryb widoczności.</li>
+ <li>Brak linii przy SHORT: to prawidłowe — SHORT jest tylko findingiem.</li>
+ <li>Po domknięciu rozwarcia zapisz layout, ponów analizę i kliknij <b>Refresh</b>; odpowiednia linia ma zniknąć.</li>
+ <li>Brak pinów static cell: sprawdź zachowane etykiety terminali i binding instancji.</li>
+</ul>
+
+<h2 id="self-test">7. Polecenia do samodzielnego testu</h2>
+<p>Menu produkcyjnego IHP:</p>
+<pre>PATH="$HOME/.local/bin:$PATH" iic-ihp klayout</pre>
+<p>Kontrolowany IHP: jeden OPEN, jedna flight-line i otwarty manual (proces kończy się po maksymalnie 45 s):</p>
+<pre>PATH="$HOME/.local/bin:$PATH" \
+IHP_KLAYOUT_HOME=/foss/designs/.klayout-ihp-sdl-dev \
+iic-ihp klayout -e \
+-r /foss/designs/.klayout-ihp-sdl-dev/salt/ConnectivityInspectionPlugin/tests/klayout_sdl_gui_smoke.py \
+-rd expected_findings=1 -rd expected_lines=1 -rd expected_instances=2 \
+-rd show_manual=true -rd hold_seconds=45 \
+/foss/designs/.klayout-ihp-sdl-dev/sdl-tests/results/ihp_sdl_smoke.oas</pre>
+<p>Pełny profil developerski XH018:</p>
+<pre>PATH="$HOME/.local/bin:$PATH" \
+XH018_KLAYOUT_HOME=/foss/designs/.klayout-xh018-sdl-dev \
+iic-xh018 klayout</pre>
+</body>
+</html>

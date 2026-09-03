@@ -57,6 +57,7 @@ from klayout_connectivity.sdl_snapshot import (
     load_findings_for_layout,
     load_flight_lines_for_layout,
 )
+from klayout_connectivity.user_manual import SDLUserManualDialog
 
 #--------------------------------------------------------------------------------
 
@@ -172,6 +173,7 @@ class ConnectivityPluginFactory(pya.PluginFactory):
   
         self.setupDock      = None
         self.connectivity_browser_dialog = None
+        self.manual_dialog = None
         self.conn_info = None
         self.markers_flywires = []
         self.markers_terminals = []
@@ -266,6 +268,14 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         menu.insert_item(f"tools_menu.connectivity_menu.#2", f"open_connectivity_browser", action)
         self._menu_action_open_connectivity_browser = action
 
+        action = pya.Action()
+        action.title = "SDL / CAS User Manual..."
+        action.on_triggered += lambda: self.show_user_manual()
+        menu.insert_item(
+            "tools_menu.connectivity_menu.end", "sdl_user_manual", action
+        )
+        self._menu_action_user_manual = action
+
         # add additional toolbar menu item to toggle flywire functionality
         
         action = pya.Action()
@@ -336,9 +346,18 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         if self.connectivity_browser_dialog:
             self.connectivity_browser_dialog.close()
             self.connectivity_browser_dialog = None
+
+        if self.manual_dialog:
+            self.manual_dialog.close()
+            self.manual_dialog = None
         
         if self.setupDock:
             self.setupDock.hide()
+
+    def show_user_manual(self):
+        if self.manual_dialog is None:
+            self.manual_dialog = SDLUserManualDialog(pya.MainWindow.instance())
+        self.manual_dialog.show_section("cas")
         
     def toggle_connectivity_overlay(self, action: pya.Action):
         if Debugging.DEBUG:

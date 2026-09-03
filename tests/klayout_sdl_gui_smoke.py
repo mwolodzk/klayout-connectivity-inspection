@@ -27,12 +27,17 @@ expected_findings = int(required("expected_findings"))
 expected_lines = int(required("expected_lines"))
 expected_instances = int(required("expected_instances"))
 expect_static = str(globals().get("expect_static") or "false").lower() == "true"
+show_manual = str(globals().get("show_manual") or "false").lower() == "true"
 
 menu = pya.MainWindow.instance().menu()
 import_action = menu.action("file_menu.import_menu.import_netlist")
 assert import_action is not None and import_action.title == "Netlist", import_action
 browser_action = menu.action("tools_menu.connectivity_menu.open_connectivity_browser")
 assert browser_action is not None and browser_action.title == "Open Connectivity Browser", browser_action
+import_manual_action = menu.action("file_menu.import_menu.netlist_import_sdl_manual")
+assert import_manual_action is not None and import_manual_action.title == "Netlist Import / SDL Manual...", import_manual_action
+manual_action = menu.action("tools_menu.connectivity_menu.sdl_user_manual")
+assert manual_action is not None and manual_action.title == "SDL / CAS User Manual...", manual_action
 
 factory = ConnectivityPluginFactory.instance
 if callable(factory):
@@ -67,6 +72,15 @@ factory.set_flight_lines_visibility(VisibilityMode.ALL_OPENS)
 assert len(factory.markers_flywires) == expected_lines, len(factory.markers_flywires)
 dialog.raise_()
 dialog.activateWindow()
+if show_manual:
+    manual_action.trigger()
+    pya.Application.instance().process_events()
+    manual = factory.manual_dialog
+    assert manual is not None and manual.isVisible()
+    text = manual.browser.toPlainText()
+    assert "Source File" in text and "All Opens" in text and "okno CAS" in text
+    manual.raise_()
+    manual.activateWindow()
 pya.Application.instance().process_events()
 print("SDL_GUI_SMOKE_READY findings=%d selected=%d instances=%d lines=%d static=%s" % (
     expected_findings,

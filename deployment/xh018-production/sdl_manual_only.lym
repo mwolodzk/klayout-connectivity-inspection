@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description/>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>10</priority>
+ <shortcut/>
+ <show-in-menu>false</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import os
+import sys
+
+import pya
+
+if pya.MainWindow.instance() is None:
+    sys.exit(0)
+
+directory_containing_this_script = os.path.realpath(os.path.dirname(__file__))
+sys.path.append(directory_containing_this_script)
+
+from klayout_connectivity.user_manual import SDLUserManualDialog
+
+if 'SDL_CAS_Manual_Only_Dialog' in globals() and SDL_CAS_Manual_Only_Dialog is not None:
+    SDL_CAS_Manual_Only_Dialog.close()
+SDL_CAS_Manual_Only_Dialog = None
+
+def show_sdl_cas_manual():
+    global SDL_CAS_Manual_Only_Dialog
+    if SDL_CAS_Manual_Only_Dialog is None:
+        SDL_CAS_Manual_Only_Dialog = SDLUserManualDialog(pya.MainWindow.instance())
+    SDL_CAS_Manual_Only_Dialog.show_section('cas')
+
+menu = pya.MainWindow.instance().menu()
+action = pya.Action()
+action.title = 'SDL / CAS User Manual...'
+action.on_triggered += show_sdl_cas_manual
+menu.insert_item('tools_menu.end', 'sdl_cas_user_manual', action)
+SDL_CAS_Manual_Only_Action = action</text>
+</klayout-macro>
