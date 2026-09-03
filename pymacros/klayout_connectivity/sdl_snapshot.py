@@ -36,12 +36,20 @@ def load_findings_sidecar(sidecar_path: Path) -> Tuple[Finding, ...]:
     """
     try:
         with sidecar_path.open("r", encoding="utf-8") as handle:
-            snapshot = json.load(handle)
+            document = json.load(handle)
     except json.JSONDecodeError as error:
         raise SnapshotFormatError("Invalid SDL JSON in {}: {}".format(sidecar_path, error))
 
-    if not isinstance(snapshot, Mapping):
+    if not isinstance(document, Mapping):
         raise SnapshotFormatError("SDL sidecar root must be an object")
+    # NetlistImportPlugin stores checker output under the public sidecar's
+    # ``snapshot`` member.  Accept a bare snapshot too so this reader also
+    # remains useful for adapter/debug fixtures.
+    snapshot = document.get("snapshot", document)
+    if snapshot is None:
+        return ()
+    if not isinstance(snapshot, Mapping):
+        raise SnapshotFormatError("SDL sidecar 'snapshot' must be an object or null")
     raw_findings = snapshot.get("findings", ())
     if not isinstance(raw_findings, list):
         raise SnapshotFormatError("SDL sidecar 'findings' must be a list")

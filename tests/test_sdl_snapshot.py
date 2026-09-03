@@ -54,3 +54,30 @@ class SdlSnapshotTest(unittest.TestCase):
             }]}), encoding="utf-8")
             with self.assertRaises(SnapshotFormatError):
                 load_findings_sidecar(sidecar)
+
+    def test_loads_findings_from_importer_sidecar_snapshot_member(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sidecar = Path(directory) / "chip.gds.sdl.json"
+            sidecar.write_text(json.dumps({
+                "schema": "1.0",
+                "expected": {"VDD": ["TOP/X1/D"]},
+                "snapshot": {"stale": False, "findings": [{
+                    "finding_id": "open:nested",
+                    "kind": "OPEN",
+                    "message": "nested snapshot",
+                    "pin_ids": [],
+                    "component_ids": [],
+                    "instance_ids": [],
+                    "observed_nets": [],
+                }]},
+            }), encoding="utf-8")
+
+            findings = load_findings_sidecar(sidecar)
+
+        self.assertEqual([finding.identifier for finding in findings], ["open:nested"])
+
+    def test_importer_sidecar_without_snapshot_has_no_findings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sidecar = Path(directory) / "chip.gds.sdl.json"
+            sidecar.write_text(json.dumps({"schema": "1.0", "snapshot": None}), encoding="utf-8")
+            self.assertEqual(load_findings_sidecar(sidecar), ())
