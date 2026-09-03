@@ -28,9 +28,11 @@ import pya
 from klayout_plugin_utils.debugging import debug, Debugging
 from klayout_plugin_utils.event_loop import EventLoop
 from klayout_plugin_utils.layout_connectivity_info import (
+    CellConnectivityInfo,
     CellInstanceConnectivityInfo,
     Context,
     LayoutConnectivityInfo,
+    PinInfo,
     PROPERTY_KEY__INSTANCE_INFO__CELL_NAME,
     PROPERTY_KEY__INSTANCE_INFO__HIERARCHY_PATH,
     PROPERTY_KEY__INSTANCE_INFO__INSTANCE_NAME,
@@ -59,6 +61,15 @@ from klayout_connectivity.sdl_snapshot import (
 #--------------------------------------------------------------------------------
 
 path_containing_this_script = os.path.realpath(os.path.dirname(__file__))
+
+_INSTANCE_INFO_KEYS = (
+    PROPERTY_KEY__INSTANCE_INFO__VERSION,
+    PROPERTY_KEY__INSTANCE_INFO__LIB_NAME,
+    PROPERTY_KEY__INSTANCE_INFO__CELL_NAME,
+    PROPERTY_KEY__INSTANCE_INFO__INSTANCE_NAME,
+    PROPERTY_KEY__INSTANCE_INFO__HIERARCHY_PATH,
+    PROPERTY_KEY__INSTANCE_INFO__LOCAL_NET_MAP,
+)
 
 #--------------------------------------------------------------------------------
 
@@ -550,8 +561,20 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             qmessagebox_critical('Error', 'Connectivity Inspection failed', 'No layout open to analyze')
             return
         
-        self.conn_info = LayoutConnectivityInfo.for_layout_view(self.view)
-        self._include_static_cell_connectivity_info(self.conn_info)
+        has_pcell, has_static_info = self._layout_instance_kinds()
+        if has_pcell:
+            self.conn_info = LayoutConnectivityInfo.for_layout_view(self.view)
+        else:
+            # KLayoutPluginUtils expands every occurrence while looking for
+            # PCells.  Streamed project layouts can contain hundreds of
+            # thousands of repeated static occurrences, so prove there are no
+            # PCell definitions first and avoid freezing the editor.
+            top_cell = self.cell_view.cell
+            self.conn_info = LayoutConnectivityInfo(cell_infos=[
+                CellConnectivityInfo(cell=top_cell, cell_name=top_cell.name)
+            ])
+        if has_static_info:
+            self._include_static_cell_connectivity_info(self.conn_info)
 
         # Load the public snapshot before painting.  This also resets the
         # cached lines when a previously reported OPEN was fixed.
@@ -561,6 +584,22 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         
         if self.connectivity_browser_dialog is not None and self.connectivity_browser_dialog.isVisible():
             self.connectivity_browser_dialog.update_from_conn_info(self.conn_info)
+
+    def _layout_instance_kinds(self) -> Tuple[bool, bool]:
+        """Inspect hierarchy definitions once, without expanding occurrences."""
+        has_pcell = False
+        has_static_info = False
+        if self.layout is None:
+            return has_pcell, has_static_info
+        for cell in self.layout.each_cell():
+            for inst in cell.each_inst():
+                if inst.is_pcell():
+                    has_pcell = True
+                elif any(inst.property(key) is not None for key in _INSTANCE_INFO_KEYS):
+                    has_static_info = True
+                if has_pcell and has_static_info:
+                    return has_pcell, has_static_info
+        return has_pcell, has_static_info
 
     def _include_static_cell_connectivity_info(self, conn_info: LayoutConnectivityInfo):
         """Add imported/static instances carrying INSTANCE_INFO__* metadata.
@@ -582,20 +621,55 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             inst = iterator.current_inst_element().inst()
             hidden = self.view.is_cell_hidden(inst.cell.cell_index(), self.view.active_cellview_index)
             static_has_instance_info = any(
-                inst.property(key) is not None
-                for key in (
-                    PROPERTY_KEY__INSTANCE_INFO__VERSION,
-                    PROPERTY_KEY__INSTANCE_INFO__LIB_NAME,
-                    PROPERTY_KEY__INSTANCE_INFO__CELL_NAME,
-                    PROPERTY_KEY__INSTANCE_INFO__INSTANCE_NAME,
-                    PROPERTY_KEY__INSTANCE_INFO__HIERARCHY_PATH,
-                    PROPERTY_KEY__INSTANCE_INFO__LOCAL_NET_MAP,
-                )
+                inst.property(key) is not None for key in _INSTANCE_INFO_KEYS
             )
             if not hidden and not inst.is_pcell() and static_has_instance_info:
                 info = CellInstanceConnectivityInfo.for_instance(inst, iterator.inst_trans(), ctx)
                 if info is not None:
+                    self._include_static_label_pin_infos(
+                        info, inst, iterator.inst_trans()
+                    )
                     target.append(info)
+            iterator.next()
+
+    def _include_static_label_pin_infos(self, info, inst, outer_trans):
+        """Expose preserved static-cell terminal labels as inspector pins.
+
+        Static XH018 cells have no PCell ``PIN_INFO`` polygons, but their GDS
+        contains terminal text.  Match only labels named in the importer's
+        local pin map and transform them to top coordinates.  This keeps the
+        inspector technology-neutral and avoids inventing unnamed pins.
+        """
+        if info.pin_infos or not info.local_net_map or self.layout is None:
+            return
+        wanted = {str(name).casefold(): str(name) for name in info.local_net_map}
+        iterator = pya.RecursiveShapeIterator(
+            self.layout, inst.cell, self.layout.layer_indexes()
+        )
+        while not iterator.at_end():
+            shape = iterator.shape()
+            if shape.is_text():
+                label = shape.text.string.strip()
+                pin_name = wanted.get(label.casefold())
+                if pin_name is not None:
+                    full_trans = outer_trans * iterator.itrans()
+                    bbox = shape.bbox().transformed(full_trans).to_dtype(
+                        self.layout.dbu
+                    )
+                    if bbox.empty():
+                        position = (full_trans * shape.text.trans).disp.to_dtype(
+                            self.layout.dbu
+                        )
+                        bbox = pya.DBox(
+                            position.x - 0.05, position.y - 0.05,
+                            position.x + 0.05, position.y + 0.05,
+                        )
+                    info.pin_infos.append(PinInfo(
+                        name=pin_name,
+                        term_name=pin_name,
+                        bbox=bbox,
+                        layers=[self.layout.get_info(iterator.layer())],
+                    ))
             iterator.next()
 
     def _layout_filename(self) -> Optional[str]:
@@ -696,7 +770,17 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             hierarchy_path = inst.property(PROPERTY_KEY__INSTANCE_INFO__HIERARCHY_PATH)
             instance_id = self._normalized_target_identifier(hierarchy_path or inst.cell.name)
             if instance_id in instance_ids:
-                paths.append(pya.ObjectInstPath(iterator, self.view.active_cellview_index))
+                # ObjectInstPath's iterator constructor accepts a
+                # RecursiveShapeIterator only.  For an instance iterator,
+                # build the documented InstElement path explicitly and append
+                # the current element as the selected instance.
+                object_path = pya.ObjectInstPath()
+                object_path.cv_index = self.view.active_cellview_index
+                object_path.top = self.cell_view.cell.cell_index()
+                object_path.path = list(iterator.path()) + [
+                    iterator.current_inst_element()
+                ]
+                paths.append(object_path)
             iterator.next()
         self.view.object_selection = paths
         try:
