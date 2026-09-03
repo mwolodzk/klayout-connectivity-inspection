@@ -62,6 +62,7 @@ import klayout_plugin_utils.str_enum_compat
 import klayout_connectivity.browser
 import klayout_connectivity.findings
 import klayout_connectivity.findings_selection
+import klayout_connectivity.flight_overlay
 import klayout_connectivity.plugin
 import klayout_connectivity.options
 import klayout_connectivity.sdl_snapshot
@@ -74,6 +75,7 @@ reload(klayout_plugin_utils.object_description)
 reload(klayout_plugin_utils.str_enum_compat)
 reload(klayout_connectivity.findings)
 reload(klayout_connectivity.findings_selection)
+reload(klayout_connectivity.flight_overlay)
 reload(klayout_connectivity.sdl_snapshot)
 reload(klayout_connectivity.browser)
 reload(klayout_connectivity.plugin)

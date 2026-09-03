@@ -37,6 +37,7 @@ class ConnectivityOptions:
     show_connectivity_info: bool = False
     
     show_flywires: bool = True
+    flight_lines_mode: str = 'All Opens'
     show_instance_names: bool = True
     show_terminals: bool = True
 
@@ -57,6 +58,7 @@ class ConnectivityOptions:
                 options.show_connectivity_panel = cls.str2bool(d['show_connectivity_panel'])
                 options.show_connectivity_info = cls.str2bool(d['show_connectivity_info'])
                 options.show_flywires = cls.str2bool(d['show_flywires'])
+                options.flight_lines_mode = d.get('flight_lines_mode', 'All Opens')
                 options.show_instance_names = cls.str2bool(d['show_instance_names'])
                 options.show_terminals = cls.str2bool(d['show_terminals'])
         except Exception as e:
@@ -80,6 +82,7 @@ class ConnectivityOptions:
             'show_connectivity_panel': self.bool2str(self.show_connectivity_panel),
             'show_connectivity_info': self.bool2str(self.show_connectivity_info),
             'show_flywires': self.bool2str(self.show_flywires),
+            'flight_lines_mode': self.flight_lines_mode,
             'show_instance_names': self.bool2str(self.show_instance_names),
             'show_terminals': self.bool2str(self.show_terminals),
         }

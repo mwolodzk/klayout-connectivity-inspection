@@ -134,6 +134,46 @@
            </widget>
           </item>
           <item>
+           <layout class="QHBoxLayout" name="flightLinesModeLayout">
+            <item>
+             <widget class="QLabel" name="flight_lines_mode_label">
+              <property name="text">
+               <string>Flight-lines</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="flight_lines_mode_cb">
+              <item>
+               <property name="text">
+                <string>Off</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Selected Nets</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Selected Pins</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Selected Instances</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>All Opens</string>
+               </property>
+              </item>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
            <widget class="QCheckBox" name="show_instance_names_cbx">
             <property name="text">
              <string>Instance Names</string>

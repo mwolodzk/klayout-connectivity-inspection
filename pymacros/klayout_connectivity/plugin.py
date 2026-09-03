@@ -43,8 +43,17 @@ from klayout_plugin_utils.qt_helpers import qmessagebox_critical
 from klayout_connectivity.browser import ConnectivityBrowserDialog
 from klayout_connectivity.findings import BoundingBox, FindingSelection, FindingTarget
 from klayout_connectivity.findings_selection import FindingsSelectionAdapter
+from klayout_connectivity.flight_overlay import (
+    FlightLineMarkerSeam,
+    VisibilityMode,
+    visible_flight_lines,
+)
 from klayout_connectivity.options import ConnectivityOptions, CONFIG_KEY__CONNECTIVITY_OPTIONS
-from klayout_connectivity.sdl_snapshot import SnapshotFormatError, load_findings_for_layout
+from klayout_connectivity.sdl_snapshot import (
+    SnapshotFormatError,
+    load_findings_for_layout,
+    load_flight_lines_for_layout,
+)
 
 #--------------------------------------------------------------------------------
 
@@ -109,6 +118,7 @@ class ConnectivitySetupWidget(pya.QWidget):
             self.page.show_terminals_cbx,
         ):
             cbx.toggled(self.save_config)        
+        self.page.flight_lines_mode_cb.currentIndexChanged(self.save_config)
          
     def update_ui_from_config(self, config: ConnectivityOptions):
         cbx_and_value = (
@@ -122,6 +132,7 @@ class ConnectivitySetupWidget(pya.QWidget):
         try:
             for cbx, checked in cbx_and_value:
                 cbx.setChecked(checked)
+            self.page.flight_lines_mode_cb.setCurrentText(config.flight_lines_mode)
         finally:
             for cbx, was_blocked in previous:
                 cbx.blockSignals(was_blocked)            
@@ -130,6 +141,7 @@ class ConnectivitySetupWidget(pya.QWidget):
         o = ConnectivityOptions.load()
         o.show_connectivity_info = self.page.show_connectivity_cbx.checked
         o.show_flywires = self.page.show_flywires_cbx.checked
+        o.flight_lines_mode = self.page.flight_lines_mode_cb.currentText
         o.show_instance_names = self.page.show_instance_names_cbx.checked
         o.show_terminals = self.page.show_terminals_cbx.checked
         return o
@@ -153,6 +165,13 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self.markers_terminals = []
         self.markers_instance_names = []
         self.markers_findings = []
+        self.sdl_flight_lines = ()
+        self.flight_lines_mode = VisibilityMode.ALL_OPENS
+        self.flight_lines_selected = ()
+        self.flight_line_marker_seam = FlightLineMarkerSeam(
+            self._create_flight_line_marker,
+            self._destroy_flight_line_marker,
+        )
         self.findings_selection_adapter = FindingsSelectionAdapter(
             self._zoom_to_finding_bbox,
             self._highlight_finding_targets,
@@ -387,6 +406,7 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             
             self.connectivity_browser_dialog.update_from_conn_info(self.conn_info)
             self._load_layout_sidecar_findings()
+            self.update_markers_flywires()
             self.connectivity_browser_dialog.show()
             self.connectivity_browser_dialog.raise_()
             self.connectivity_browser_dialog.activateWindow()        
@@ -493,7 +513,10 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         setattr(self, attr, [])
 
     def _clear_markers_flywires(self):
-        self._clear_markers_field('markers_flywires')
+        # Keep marker ownership in the testable seam so refreshes cannot leave
+        # stale lines behind (including when a fixed OPEN disappears).
+        self.flight_line_marker_seam.render(())
+        self.markers_flywires = []
 
     def _clear_markers_terminals(self):
         self._clear_markers_field('markers_terminals')
@@ -512,12 +535,15 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         
         self.conn_info = LayoutConnectivityInfo.for_layout_view(self.view)
         self._include_static_cell_connectivity_info(self.conn_info)
+
+        # Load the public snapshot before painting.  This also resets the
+        # cached lines when a previously reported OPEN was fixed.
+        self._load_layout_sidecar_findings()
         
         self.update_markers()
         
         if self.connectivity_browser_dialog is not None and self.connectivity_browser_dialog.isVisible():
             self.connectivity_browser_dialog.update_from_conn_info(self.conn_info)
-            self._load_layout_sidecar_findings()
 
     def _include_static_cell_connectivity_info(self, conn_info: LayoutConnectivityInfo):
         """Add imported/static instances carrying INSTANCE_INFO__* metadata.
@@ -569,21 +595,26 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         return None
 
     def _load_layout_sidecar_findings(self):
-        """Refresh the browser from <layout>.sdl.json; absent sidecars are OK."""
-        if self.connectivity_browser_dialog is None:
-            return
+        """Refresh findings and open-only flight-lines from ``<layout>.sdl.json``."""
         layout_filename = self._layout_filename()
         if not layout_filename:
-            self.connectivity_browser_dialog.update_findings(())
+            self.sdl_flight_lines = ()
+            if self.connectivity_browser_dialog is not None:
+                self.connectivity_browser_dialog.update_findings(())
             return
         try:
             findings = load_findings_for_layout(layout_filename)
+            flight_lines = load_flight_lines_for_layout(layout_filename)
         except FileNotFoundError:
             findings = ()
+            flight_lines = ()
         except SnapshotFormatError as error:
             print("Connectivity SDL sidecar ignored: {}".format(error))
             findings = ()
-        self.connectivity_browser_dialog.update_findings(findings)
+            flight_lines = ()
+        self.sdl_flight_lines = flight_lines
+        if self.connectivity_browser_dialog is not None:
+            self.connectivity_browser_dialog.update_findings(findings)
 
     def _zoom_to_finding_bbox(self, bbox: BoundingBox):
         """Zoom the current view to the union box supplied by FindingsModel."""
@@ -726,46 +757,38 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         
     def update_markers_flywires(self):
         self._clear_markers_flywires()
-        
         opts = self.options
         if not opts.show_connectivity_info:
             return
         if not opts.show_flywires:
             return
-            
-        # Group all pins across the whole layout by their actual net, using
-        # the pin->net map the netlist importer stores per-instance
-        # (INSTANCE_INFO__LOCAL_NET_MAP). term_name (the PCell-local
-        # terminal name) is only used as a fallback for instances that
-        # don't carry a net map yet, e.g. layouts imported before this
-        # property was introduced -- in that case flywires degrade back to
-        # the old (non-net-aware) grouping for just that instance.
-        pins_by_net: Dict[str, List[pya.DPoint]] = {}
+        try:
+            self.flight_lines_mode = VisibilityMode(opts.flight_lines_mode)
+        except ValueError:
+            self.flight_lines_mode = VisibilityMode.ALL_OPENS
+        lines = visible_flight_lines(
+            self.sdl_flight_lines,
+            self.flight_lines_mode,
+            self.flight_lines_selected,
+        )
+        self.markers_flywires = list(self.flight_line_marker_seam.render(lines))
 
-        for cell in self.conn_info.cell_infos:
-            for pcell in cell.pcell_infos:
-                for pin in pcell.pin_infos:
-                    net_name = pcell.local_net_map.get(pin.name)
-                    if net_name is None:
-                        if Debugging.DEBUG:
-                            debug(f"update_markers_flywires: no net mapping for "
-                                  f"pin '{pin.name}' on instance "
-                                  f"'{pcell.inst_name}' ({pcell.cell_name}), "
-                                  f"falling back to term_name '{pin.term_name}'")
-                        net_name = pin.term_name
-                    pins_by_net.setdefault(net_name, []).append(pin.bbox.center())
+    def _create_flight_line_marker(self, start, end):
+        return self._line_marker(pya.DEdge(pya.DPoint(*start), pya.DPoint(*end)))
 
-        for net_name, points in pins_by_net.items():
-            if len(points) < 2:
-                continue
+    @staticmethod
+    def _destroy_flight_line_marker(marker):
+        marker._destroy()
 
-            # Connect each pin to the first pin on the same net (star
-            # topology) -- simplest approach, avoids O(n^2) full mesh.
-            anchor = points[0]
-            for pt in points[1:]:
-                edge = pya.DEdge(anchor, pt)
-                m = self._line_marker(edge)
-                self.markers_flywires.append(m)            
+    def set_flight_lines_visibility(self, mode: VisibilityMode, selected=()):
+        """Set a snapshot overlay mode and immediately refresh its markers.
+
+        This small method is the UI seam: browser controls can pass selected
+        net, pin, or instance IDs without coupling the pure filter to Qt.
+        """
+        self.flight_lines_mode = VisibilityMode(mode)
+        self.flight_lines_selected = tuple(selected)
+        self.update_markers_flywires()
 
     def update_markers_terminals(self):
         self._clear_markers_terminals()
