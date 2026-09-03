@@ -33,6 +33,7 @@ from klayout_plugin_utils.qt_helpers import (
     compat_QTreeWidgetItem_setBackground,
 )
 from klayout_plugin_utils.ui_loader import load_ui
+from klayout_connectivity.findings import Finding, FindingSelection, FindingsModel
 
 
 #--------------------------------------------------------------------------------
@@ -272,9 +273,15 @@ class ConnectivityBrowserDialog(pya.QDialog):
     layout: one tab browsing by net, one tab browsing by instance.
     """
 
-    def __init__(self, parent=None, refresh_callback: Optional[Callable] = None):
+    def __init__(self, parent=None, refresh_callback: Optional[Callable] = None,
+                 findings_selection_callback: Optional[Callable[[FindingSelection], None]] = None):
         super().__init__(parent)
         self.refresh_callback = refresh_callback
+        # The current browser has no findings producer yet.  Keeping its state
+        # here gives that producer a small, explicit integration seam without
+        # making the reusable model depend on pya/Qt.
+        self.findings_model = FindingsModel()
+        self.findings_selection_callback = findings_selection_callback
         self._init_ui()
 
     def _init_ui(self):
@@ -309,6 +316,21 @@ class ConnectivityBrowserDialog(pya.QDialog):
     def update_from_conn_info(self, conn_info: LayoutConnectivityInfo):
         self.by_net_page.update_from_conn_info(conn_info)
         self.by_instance_page.update_from_conn_info(conn_info)
+
+    def update_findings(self, findings: Iterable[Finding]) -> None:
+        """Replace findings supplied by a checker and retain surviving selection."""
+        self.findings_model.replace_findings(findings)
+        self._notify_findings_selection()
+
+    def select_findings(self, identifiers: Iterable[str]) -> FindingSelection:
+        """UI selection hook; callback receives union bbox and probe targets."""
+        selection = self.findings_model.set_selection(identifiers)
+        self._notify_findings_selection(selection)
+        return selection
+
+    def _notify_findings_selection(self, selection: Optional[FindingSelection] = None) -> None:
+        if self.findings_selection_callback is not None:
+            self.findings_selection_callback(selection or self.findings_model.selection())
 
     def on_close(self):
         if Debugging.DEBUG:
