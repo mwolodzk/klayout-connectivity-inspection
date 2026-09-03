@@ -7,6 +7,14 @@
 * Navigate PCell instances
 * Learn about terminals / pins
 * Draw ratsnest / flywire for
+
+The SDL v1 extension also loads `<layout>.sdl.json`, adds a Findings tab with
+filtering, multi-select, status changes, zoom/highlight/cross-probing, and
+renders deterministic flight-lines for `OPEN` findings only. Visibility can
+be limited to selected nets, pins or instances. Static imported cells with
+`INSTANCE_INFO__*` metadata and preserved terminal labels are included beside
+PCells. Layouts without PCells or importer metadata take a non-expanding fast
+path so large streamed hierarchies do not freeze the editor.
    
 This add-on can be installed through [KLayout](https://klayout.de) package manager, [see installation instructions here](#installation-instructions)
 
@@ -66,7 +74,7 @@ The `NetlistImportPlugin` stores the instance information properties on all inst
 | `INSTANCE_INFO__HIERARCHY_PATH`           | String              | Instance FQN                    | `'TOP.x1'`        |                                 |
 | `INSTANCE_INFO__ORIGINAL_INSTANCE_PARAMS` | String              | Netlist Instance Params         |                   |                                 |   
 | `INSTANCE_INFO__LOCAL_NET_MAP`            | String              | Maps nodes to nets (cell-local) | `'{"nwell": "nwell1", "psub": "psub", "VDD": "VDD", "vin": "vin1", "vout": "vout1", "VSS": "VSS"}'` |            |
-| `INSTANCE_INFO__GLOBAL_NET_MAP`           | String              | Maps nodes to nets (flattened)  | `'{"nwell": "nwell1", "psub": "psub", "VDD": "VDD", "vin": "vin1", "vout": "vout1", "VSS": "VSS"}'` |  not implemented yet |
+| `INSTANCE_INFO__GLOBAL_NET_MAP`           | String              | Maps nodes to globally resolved nets | `'{"nwell": "TOP.nwell1", "psub": "TOP.psub", "VDD": "TOP.VDD", "vin": "TOP.vin1", "vout": "TOP.vout1", "VSS": "TOP.VSS"}'` | resolved top-down by NetlistImportPlugin |
 
 #### Example 2: PCell
 
@@ -79,5 +87,4 @@ The `NetlistImportPlugin` stores the instance information properties on all inst
 | `INSTANCE_INFO__HIERARCHY_PATH`           | String              | Instance FQN                    | `'inverter.XM2'`  |                                 |
 | `INSTANCE_INFO__ORIGINAL_INSTANCE_PARAMS` | String              | Netlist Instance Params         | `'{"w": "120.0u", "l": "1.0u", "ng": "20", "m": "1", "mm_ok": "1"}'`                  |                                 |   
 | `INSTANCE_INFO__LOCAL_NET_MAP`            | String              | Maps nodes to nets (cell-local) | `'{"d": "vout", "g": "vin", "s": "VDD", "b": "nwell"}'` |            |
-| `INSTANCE_INFO__GLOBAL_NET_MAP`           | String              | Maps nodes to nets (flattened)  | `'{"d": "vout", "g": "vin", "s": "VDD", "b": "nwell"}'` |  not implemented yet |
-
+| `INSTANCE_INFO__GLOBAL_NET_MAP`           | String              | Maps nodes to globally resolved nets | `'{"d": "TOP.vout", "g": "TOP.vin", "s": "TOP.VDD", "b": "TOP.nwell"}'` | resolved top-down by NetlistImportPlugin |
