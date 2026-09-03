@@ -94,6 +94,10 @@ class FindingsModelTest(unittest.TestCase):
         with self.assertRaises(KeyError):
             model.set_selection(("missing",))
 
+    def test_raw_status_is_normalized_for_generic_rule_adapters(self):
+        result = Finding("raw", "FUTURE_KIND", "Future", status="waived")
+        self.assertEqual(result.status, FindingStatus.WAIVED)
+
 
 if __name__ == "__main__":
     unittest.main()

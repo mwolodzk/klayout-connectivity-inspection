@@ -33,7 +33,14 @@ from klayout_plugin_utils.qt_helpers import (
     compat_QTreeWidgetItem_setBackground,
 )
 from klayout_plugin_utils.ui_loader import load_ui
-from klayout_connectivity.findings import Finding, FindingSelection, FindingsModel
+from klayout_connectivity.findings import (
+    Finding,
+    FindingKind,
+    FindingSelection,
+    FindingStatus,
+    FindingsFilter,
+    FindingsModel,
+)
 
 
 #--------------------------------------------------------------------------------
@@ -267,6 +274,142 @@ def _fq_cell_name(pcell: CellInstanceConnectivityInfo) -> str:
 
 #--------------------------------------------------------------------------------
 
+def _finding_kind_text(kind) -> str:
+    return kind.value if isinstance(kind, FindingKind) else str(kind)
+
+
+#--------------------------------------------------------------------------------
+
+class ConnectivityFindingsPage(pya.QWidget):
+    """Qt presentation of the pure-Python :class:`FindingsModel`."""
+
+    _ALL_STATUSES = "All statuses"
+    _ALL_KINDS = "All kinds"
+
+    def __init__(self, model: FindingsModel, selection_callback: Callable[[FindingSelection], None], parent=None):
+        super().__init__(parent)
+        self.model = model
+        self.selection_callback = selection_callback
+        self._updating_rows = False
+
+        layout = pya.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        filters = pya.QHBoxLayout()
+        filters.addWidget(pya.QLabel("Status:"))
+        self.status_cbx = pya.QComboBox(self)
+        self.status_cbx.addItem(self._ALL_STATUSES)
+        for status in FindingStatus:
+            self.status_cbx.addItem(status.value)
+        filters.addWidget(self.status_cbx)
+        filters.addWidget(pya.QLabel("Kind:"))
+        self.kind_cbx = pya.QComboBox(self)
+        filters.addWidget(self.kind_cbx)
+        filters.addWidget(pya.QLabel("Text:"))
+        self.text_le = pya.QLineEdit(self)
+        self.text_le.setPlaceholderText("ID, kind, title, or message")
+        filters.addWidget(self.text_le)
+        layout.addLayout(filters)
+
+        self.findings_tw = pya.QTreeWidget(self)
+        self.findings_tw.setHeaderLabels(["Status", "Kind", "Finding", "ID"])
+        self.findings_tw.setRootIsDecorated(False)
+        self.findings_tw.setSelectionMode(pya.QAbstractItemView.ExtendedSelection)
+        self.findings_tw.header.setSectionResizeMode(0, pya.QHeaderView.ResizeToContents)
+        self.findings_tw.header.setSectionResizeMode(1, pya.QHeaderView.ResizeToContents)
+        self.findings_tw.header.setSectionResizeMode(2, pya.QHeaderView.Stretch)
+        self.findings_tw.header.setSectionResizeMode(3, pya.QHeaderView.ResizeToContents)
+        layout.addWidget(self.findings_tw)
+
+        actions = pya.QHBoxLayout()
+        self.active_pb = pya.QPushButton("Mark Active", self)
+        self.visited_pb = pya.QPushButton("Mark Visited", self)
+        self.waived_pb = pya.QPushButton("Waive", self)
+        actions.addWidget(self.active_pb)
+        actions.addWidget(self.visited_pb)
+        actions.addWidget(self.waived_pb)
+        actions.addStretch()
+        self.count_label = pya.QLabel(self)
+        actions.addWidget(self.count_label)
+        layout.addLayout(actions)
+
+        self.status_cbx.currentTextChanged.connect(lambda *_: self._apply_filter())
+        self.kind_cbx.currentTextChanged.connect(lambda *_: self._apply_filter())
+        self.text_le.textChanged.connect(lambda *_: self._apply_filter())
+        self.findings_tw.itemSelectionChanged.connect(self._on_selection_changed)
+        self.active_pb.clicked.connect(lambda *_: self._set_selected_status(FindingStatus.ACTIVE))
+        self.visited_pb.clicked.connect(lambda *_: self._set_selected_status(FindingStatus.VISITED))
+        self.waived_pb.clicked.connect(lambda *_: self._set_selected_status(FindingStatus.WAIVED))
+        self.refresh()
+
+    def replace_findings(self, findings: Iterable[Finding]) -> None:
+        self.model.replace_findings(findings)
+        self._rebuild_kind_filter()
+        self._apply_filter()
+
+    def refresh(self) -> None:
+        selected = self.model.selected_identifiers
+        self._updating_rows = True
+        previous = self.findings_tw.blockSignals(True)
+        try:
+            self.findings_tw.clear()
+            for finding in self.model.visible_findings:
+                item = pya.QTreeWidgetItem()
+                item.setText(0, finding.status.value)
+                item.setText(1, _finding_kind_text(finding.kind))
+                item.setText(2, finding.title if not finding.message else "{} — {}".format(finding.title, finding.message))
+                item.setText(3, finding.identifier)
+                item.setData(0, _ITEM_INDEX_ROLE, finding.identifier)
+                self.findings_tw.addTopLevelItem(item)
+                item.setSelected(finding.identifier in selected)
+            self.count_label.setText("{}/{} shown".format(len(self.model.visible_findings), len(self.model.findings)))
+        finally:
+            self.findings_tw.blockSignals(previous)
+            self._updating_rows = False
+
+    def _rebuild_kind_filter(self) -> None:
+        current = self.kind_cbx.currentText
+        previous = self.kind_cbx.blockSignals(True)
+        try:
+            self.kind_cbx.clear()
+            self.kind_cbx.addItem(self._ALL_KINDS)
+            # The seven SDL v1 kinds are always available, even for an empty
+            # snapshot; custom kinds from a newer checker remain filterable.
+            kinds = {kind.value for kind in FindingKind}
+            kinds.update(_finding_kind_text(finding.kind) for finding in self.model.findings)
+            for kind in sorted(kinds):
+                self.kind_cbx.addItem(kind)
+            index = self.kind_cbx.findText(current)
+            self.kind_cbx.setCurrentIndex(index if index >= 0 else 0)
+        finally:
+            self.kind_cbx.blockSignals(previous)
+
+    def _apply_filter(self) -> None:
+        status_text = self.status_cbx.currentText
+        kind_text = self.kind_cbx.currentText
+        statuses = frozenset() if status_text == self._ALL_STATUSES else frozenset((FindingStatus(status_text),))
+        kinds = frozenset() if kind_text == self._ALL_KINDS else frozenset((kind_text,))
+        self.model.set_filter(FindingsFilter(statuses=statuses, kinds=kinds, text=self.text_le.text))
+        self.refresh()
+
+    def _on_selection_changed(self) -> None:
+        if self._updating_rows:
+            return
+        identifiers = [item.data(0, _ITEM_INDEX_ROLE) for item in self.findings_tw.selectedItems()]
+        selection = self.model.set_selection(identifiers)
+        self.selection_callback(selection)
+
+    def _set_selected_status(self, status: FindingStatus) -> None:
+        identifiers = [item.data(0, _ITEM_INDEX_ROLE) for item in self.findings_tw.selectedItems()]
+        if not identifiers:
+            return
+        self.model.set_status(identifiers, status)
+        self.refresh()
+        self.selection_callback(self.model.selection())
+
+
+#--------------------------------------------------------------------------------
+
 class ConnectivityBrowserDialog(pya.QDialog):
     """
     Non-modal inspector showing all connectivity info for the current
@@ -298,9 +441,13 @@ class ConnectivityBrowserDialog(pya.QDialog):
 
         self.by_net_page = ConnectivityByNetPage(self)
         self.by_instance_page = ConnectivityByInstancePage(self)
+        self.findings_page = ConnectivityFindingsPage(
+            self.findings_model, self._notify_findings_selection, self
+        )
 
         self.tabs.addTab(self.by_net_page, "By Net")
         self.tabs.addTab(self.by_instance_page, "By Instance")
+        self.tabs.addTab(self.findings_page, "Findings")
 
         bottom = pya.QHBoxLayout()
         self.refresh_pb = pya.QPushButton("Refresh")
@@ -319,12 +466,13 @@ class ConnectivityBrowserDialog(pya.QDialog):
 
     def update_findings(self, findings: Iterable[Finding]) -> None:
         """Replace findings supplied by a checker and retain surviving selection."""
-        self.findings_model.replace_findings(findings)
+        self.findings_page.replace_findings(findings)
         self._notify_findings_selection()
 
     def select_findings(self, identifiers: Iterable[str]) -> FindingSelection:
         """UI selection hook; callback receives union bbox and probe targets."""
         selection = self.findings_model.set_selection(identifiers)
+        self.findings_page.refresh()
         self._notify_findings_selection(selection)
         return selection
 

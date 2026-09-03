@@ -1,0 +1,115 @@
+"""Read the public SDL sidecar without importing the SDL importer package."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+
+from klayout_connectivity.findings import (
+    BoundingBox,
+    Finding,
+    FindingStatus,
+    FindingTarget,
+)
+
+
+class SnapshotFormatError(ValueError):
+    """The sidecar is present but cannot safely be displayed as findings."""
+
+
+def sidecar_path_for_layout(layout_path: str) -> Path:
+    """Return the SDL v1 sidecar path: ``<layout>.sdl.json``."""
+    return Path(str(layout_path) + ".sdl.json")
+
+
+def load_findings_for_layout(layout_path: str) -> Tuple[Finding, ...]:
+    return load_findings_sidecar(sidecar_path_for_layout(layout_path))
+
+
+def load_findings_sidecar(sidecar_path: Path) -> Tuple[Finding, ...]:
+    """Load a JSON sidecar emitted by SDL v1 into browser-owned findings.
+
+    Only the documented JSON structure is consumed; this adapter intentionally
+    does not import ``klayout_netlist_importer`` so the inspection plugin can
+    be installed on its own.
+    """
+    try:
+        with sidecar_path.open("r", encoding="utf-8") as handle:
+            snapshot = json.load(handle)
+    except json.JSONDecodeError as error:
+        raise SnapshotFormatError("Invalid SDL JSON in {}: {}".format(sidecar_path, error))
+
+    if not isinstance(snapshot, Mapping):
+        raise SnapshotFormatError("SDL sidecar root must be an object")
+    raw_findings = snapshot.get("findings", ())
+    if not isinstance(raw_findings, list):
+        raise SnapshotFormatError("SDL sidecar 'findings' must be a list")
+    return tuple(_finding_from_raw(raw, index) for index, raw in enumerate(raw_findings))
+
+
+def _finding_from_raw(raw: Any, index: int) -> Finding:
+    if not isinstance(raw, Mapping):
+        raise SnapshotFormatError("Finding #{} must be an object".format(index))
+    identifier = _required_string(raw, "finding_id", index)
+    kind = _required_string(raw, "kind", index)
+    message = _required_string(raw, "message", index)
+    try:
+        status = FindingStatus(raw.get("status", FindingStatus.ACTIVE.value))
+    except ValueError:
+        raise SnapshotFormatError("Finding #{} has invalid status".format(index))
+
+    bbox = _bbox_from_raw(raw.get("bbox"), index)
+    pins = _string_list(raw.get("pin_ids", ()), "pin_ids", index)
+    components = _string_list(raw.get("component_ids", ()), "component_ids", index)
+    instances = _string_list(raw.get("instance_ids", ()), "instance_ids", index)
+    expected_net = raw.get("expected_net")
+    observed_nets = _string_list(raw.get("observed_nets", ()), "observed_nets", index)
+
+    highlight_targets = tuple(
+        [FindingTarget("component", component) for component in components]
+        + [FindingTarget("pin", pin) for pin in pins]
+        + [FindingTarget("instance", instance) for instance in instances]
+    )
+    cross_probe_targets = tuple(
+        [FindingTarget("instance", instance) for instance in instances]
+        + [FindingTarget("pin", pin) for pin in pins]
+        + ([FindingTarget("net", expected_net)] if isinstance(expected_net, str) and expected_net else [])
+        + [FindingTarget("net", net) for net in observed_nets]
+    )
+    return Finding(
+        identifier=identifier,
+        kind=kind,
+        title=kind.replace("_", " ").title(),
+        message=message,
+        status=status,
+        bbox=bbox,
+        highlight_targets=highlight_targets,
+        cross_probe_targets=cross_probe_targets,
+    )
+
+
+def _required_string(raw: Mapping[str, Any], key: str, index: int) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value:
+        raise SnapshotFormatError("Finding #{} requires non-empty '{}'".format(index, key))
+    return value
+
+
+def _string_list(value: Any, key: str, index: int) -> List[str]:
+    if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) and item for item in value):
+        raise SnapshotFormatError("Finding #{} '{}' must be a list of non-empty strings".format(index, key))
+    return list(value)
+
+
+def _bbox_from_raw(value: Any, index: int) -> Optional[BoundingBox]:
+    if value is None:
+        return None
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        raise SnapshotFormatError("Finding #{} bbox must be [left, bottom, right, top]".format(index))
+    if not all(isinstance(coordinate, (int, float)) for coordinate in value):
+        raise SnapshotFormatError("Finding #{} bbox coordinates must be numbers".format(index))
+    try:
+        return BoundingBox(*value)
+    except ValueError as error:
+        raise SnapshotFormatError("Finding #{} has invalid bbox: {}".format(index, error))

@@ -1,0 +1,56 @@
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pymacros"))
+
+from klayout_connectivity.findings import BoundingBox, FindingStatus, FindingTarget  # noqa: E402
+from klayout_connectivity.sdl_snapshot import (  # noqa: E402
+    SnapshotFormatError,
+    load_findings_for_layout,
+    load_findings_sidecar,
+    sidecar_path_for_layout,
+)
+
+
+class SdlSnapshotTest(unittest.TestCase):
+    def test_loads_public_sidecar_without_importer_and_maps_targets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            layout = Path(directory) / "chip.gds"
+            sidecar = sidecar_path_for_layout(str(layout))
+            sidecar.write_text(json.dumps({"findings": [{
+                "finding_id": "open:1", "kind": "OPEN", "message": "VDD split",
+                "status": "visited", "bbox": [1, 2, 4, 8],
+                "pin_ids": ["top/X1/A"], "component_ids": ["component-7"],
+                "instance_ids": ["top/X1"], "expected_net": "VDD",
+                "observed_nets": ["VDD_A"],
+            }]}), encoding="utf-8")
+
+            findings = load_findings_for_layout(str(layout))
+
+        self.assertEqual(findings[0].identifier, "open:1")
+        self.assertEqual(findings[0].status, FindingStatus.VISITED)
+        self.assertEqual(findings[0].bbox, BoundingBox(1, 2, 4, 8))
+        self.assertEqual(
+            findings[0].highlight_targets,
+            (FindingTarget("component", "component-7"), FindingTarget("pin", "top/X1/A"),
+             FindingTarget("instance", "top/X1")),
+        )
+        self.assertEqual(
+            findings[0].cross_probe_targets,
+            (FindingTarget("instance", "top/X1"), FindingTarget("pin", "top/X1/A"),
+             FindingTarget("net", "VDD"), FindingTarget("net", "VDD_A")),
+        )
+
+    def test_rejects_malformed_bbox_and_unknown_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sidecar = Path(directory) / "bad.sdl.json"
+            sidecar.write_text(json.dumps({"findings": [{
+                "finding_id": "f", "kind": "OPEN", "message": "bad",
+                "status": "ignored", "bbox": [4, 0, 2, 1],
+            }]}), encoding="utf-8")
+            with self.assertRaises(SnapshotFormatError):
+                load_findings_sidecar(sidecar)

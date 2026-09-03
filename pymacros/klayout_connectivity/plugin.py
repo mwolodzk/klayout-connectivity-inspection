@@ -27,11 +27,24 @@ import pya
 
 from klayout_plugin_utils.debugging import debug, Debugging
 from klayout_plugin_utils.event_loop import EventLoop
-from klayout_plugin_utils.layout_connectivity_info import LayoutConnectivityInfo
+from klayout_plugin_utils.layout_connectivity_info import (
+    CellInstanceConnectivityInfo,
+    Context,
+    LayoutConnectivityInfo,
+    PROPERTY_KEY__INSTANCE_INFO__CELL_NAME,
+    PROPERTY_KEY__INSTANCE_INFO__HIERARCHY_PATH,
+    PROPERTY_KEY__INSTANCE_INFO__INSTANCE_NAME,
+    PROPERTY_KEY__INSTANCE_INFO__LIB_NAME,
+    PROPERTY_KEY__INSTANCE_INFO__LOCAL_NET_MAP,
+    PROPERTY_KEY__INSTANCE_INFO__VERSION,
+)
 from klayout_plugin_utils.qt_helpers import qmessagebox_critical
 
 from klayout_connectivity.browser import ConnectivityBrowserDialog
+from klayout_connectivity.findings import BoundingBox, FindingSelection, FindingTarget
+from klayout_connectivity.findings_selection import FindingsSelectionAdapter
 from klayout_connectivity.options import ConnectivityOptions, CONFIG_KEY__CONNECTIVITY_OPTIONS
+from klayout_connectivity.sdl_snapshot import SnapshotFormatError, load_findings_for_layout
 
 #--------------------------------------------------------------------------------
 
@@ -139,6 +152,12 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self.markers_flywires = []
         self.markers_terminals = []
         self.markers_instance_names = []
+        self.markers_findings = []
+        self.findings_selection_adapter = FindingsSelectionAdapter(
+            self._zoom_to_finding_bbox,
+            self._highlight_finding_targets,
+            self._cross_probe_finding_targets,
+        )
         
         self._waiting_for_file_open = False
         
@@ -361,10 +380,13 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             if self.connectivity_browser_dialog is None:
                 mw = pya.Application.instance().main_window()
                 self.connectivity_browser_dialog = ConnectivityBrowserDialog(
-                    mw, refresh_callback=self.refresh_connectivity_info
+                    mw,
+                    refresh_callback=self.refresh_connectivity_info,
+                    findings_selection_callback=self.findings_selection_adapter.apply,
                 )
             
             self.connectivity_browser_dialog.update_from_conn_info(self.conn_info)
+            self._load_layout_sidecar_findings()
             self.connectivity_browser_dialog.show()
             self.connectivity_browser_dialog.raise_()
             self.connectivity_browser_dialog.activateWindow()        
@@ -462,6 +484,7 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self._clear_markers_flywires()
         self._clear_markers_terminals()
         self._clear_markers_instance_names()
+        self._clear_markers_findings()
         
     def _clear_markers_field(self, attr: str):
         markers = getattr(self, attr)
@@ -478,6 +501,9 @@ class ConnectivityPluginFactory(pya.PluginFactory):
     def _clear_markers_instance_names(self):
         self._clear_markers_field('markers_instance_names')
 
+    def _clear_markers_findings(self):
+        self._clear_markers_field('markers_findings')
+
     def refresh_connectivity_info(self):
         cv = pya.CellView.active()
         if cv is None or cv.cell is None:
@@ -485,11 +511,150 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             return
         
         self.conn_info = LayoutConnectivityInfo.for_layout_view(self.view)
+        self._include_static_cell_connectivity_info(self.conn_info)
         
         self.update_markers()
         
         if self.connectivity_browser_dialog is not None and self.connectivity_browser_dialog.isVisible():
             self.connectivity_browser_dialog.update_from_conn_info(self.conn_info)
+            self._load_layout_sidecar_findings()
+
+    def _include_static_cell_connectivity_info(self, conn_info: LayoutConnectivityInfo):
+        """Add imported/static instances carrying INSTANCE_INFO__* metadata.
+
+        KLayoutPluginUtils currently collects only ``inst.is_pcell()``.  Its
+        ``CellInstanceConnectivityInfo.for_instance`` parser itself works for
+        both PCells and ordinary cells, so append only the latter here and
+        preserve the existing PCell records unchanged.
+        """
+        if not conn_info.cell_infos or self.view is None or self.cell_view is None:
+            return
+        top_cell = self.cell_view.cell
+        if top_cell is None:
+            return
+        target = conn_info.cell_infos[0].pcell_infos
+        ctx = Context(layout_view=self.view)
+        iterator = top_cell.begin_instances_rec()
+        while not iterator.at_end():
+            inst = iterator.current_inst_element().inst()
+            hidden = self.view.is_cell_hidden(inst.cell.cell_index(), self.view.active_cellview_index)
+            static_has_instance_info = any(
+                inst.property(key) is not None
+                for key in (
+                    PROPERTY_KEY__INSTANCE_INFO__VERSION,
+                    PROPERTY_KEY__INSTANCE_INFO__LIB_NAME,
+                    PROPERTY_KEY__INSTANCE_INFO__CELL_NAME,
+                    PROPERTY_KEY__INSTANCE_INFO__INSTANCE_NAME,
+                    PROPERTY_KEY__INSTANCE_INFO__HIERARCHY_PATH,
+                    PROPERTY_KEY__INSTANCE_INFO__LOCAL_NET_MAP,
+                )
+            )
+            if not hidden and not inst.is_pcell() and static_has_instance_info:
+                info = CellInstanceConnectivityInfo.for_instance(inst, iterator.inst_trans(), ctx)
+                if info is not None:
+                    target.append(info)
+            iterator.next()
+
+    def _layout_filename(self) -> Optional[str]:
+        """Read a CellView filename across KLayout binding versions."""
+        cv = self.cell_view
+        if cv is None:
+            return None
+        for owner in (cv, cv.layout()):
+            value = getattr(owner, "filename", None)
+            if callable(value):
+                value = value()
+            if value:
+                return str(value)
+        return None
+
+    def _load_layout_sidecar_findings(self):
+        """Refresh the browser from <layout>.sdl.json; absent sidecars are OK."""
+        if self.connectivity_browser_dialog is None:
+            return
+        layout_filename = self._layout_filename()
+        if not layout_filename:
+            self.connectivity_browser_dialog.update_findings(())
+            return
+        try:
+            findings = load_findings_for_layout(layout_filename)
+        except FileNotFoundError:
+            findings = ()
+        except SnapshotFormatError as error:
+            print("Connectivity SDL sidecar ignored: {}".format(error))
+            findings = ()
+        self.connectivity_browser_dialog.update_findings(findings)
+
+    def _zoom_to_finding_bbox(self, bbox: BoundingBox):
+        """Zoom the current view to the union box supplied by FindingsModel."""
+        if self.view is None:
+            return
+        width = max(0.0, bbox.right - bbox.left)
+        height = max(0.0, bbox.top - bbox.bottom)
+        pad = max(width, height) * 0.15
+        if pad <= 0.0:
+            pad = 1.0
+        self.view.zoom_box(pya.DBox(
+            bbox.left - pad, bbox.bottom - pad, bbox.right + pad, bbox.top + pad
+        ))
+
+    @staticmethod
+    def _normalized_target_identifier(identifier: str) -> str:
+        return str(identifier).strip().strip("/").replace(".", "/")
+
+    def _highlight_finding_targets(self, targets: Tuple[FindingTarget, ...]):
+        """Draw highlight boxes for pin/instance targets resolvable in layout."""
+        self._clear_markers_findings()
+        if self.conn_info is None:
+            return
+        wanted = {(target.target_type, self._normalized_target_identifier(target.identifier))
+                  for target in targets}
+        seen = set()
+        for cell in self.conn_info.cell_infos:
+            for instance_info in cell.pcell_infos:
+                instance_id = self._normalized_target_identifier(
+                    instance_info.hierarchy_path or instance_info.inst_name
+                )
+                instance_wanted = ("instance", instance_id) in wanted
+                for pin in instance_info.pin_infos:
+                    pin_id = "{}/{}".format(instance_id, self._normalized_target_identifier(pin.name))
+                    if not instance_wanted and ("pin", pin_id) not in wanted:
+                        continue
+                    key = (pin.bbox.left, pin.bbox.bottom, pin.bbox.right, pin.bbox.top)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    marker = self._box_marker(pin.bbox)
+                    marker.line_width = 4
+                    marker.color = 0xffff00
+                    self.markers_findings.append(marker)
+
+    def _cross_probe_finding_targets(self, targets: Tuple[FindingTarget, ...]):
+        """Select layout instances for SDL instance/pin targets in KLayout."""
+        if self.view is None or self.cell_view is None or self.cell_view.cell is None:
+            return
+        instance_ids = set()
+        for target in targets:
+            if target.target_type == "instance":
+                instance_ids.add(self._normalized_target_identifier(target.identifier))
+            elif target.target_type == "pin":
+                parts = self._normalized_target_identifier(target.identifier).rsplit("/", 1)
+                if len(parts) == 2:
+                    instance_ids.add(parts[0])
+        paths = []
+        iterator = self.cell_view.cell.begin_instances_rec()
+        while not iterator.at_end():
+            inst = iterator.current_inst_element().inst()
+            hierarchy_path = inst.property(PROPERTY_KEY__INSTANCE_INFO__HIERARCHY_PATH)
+            instance_id = self._normalized_target_identifier(hierarchy_path or inst.cell.name)
+            if instance_id in instance_ids:
+                paths.append(pya.ObjectInstPath(iterator, self.view.active_cellview_index))
+            iterator.next()
+        self.view.object_selection = paths
+        try:
+            self.view.update_content()
+        except Exception:
+            pass
         
     def update_markers(self):
         self.update_markers_flywires()

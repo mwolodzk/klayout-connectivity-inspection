@@ -97,6 +97,7 @@ class Finding:
     def __post_init__(self) -> None:
         if not self.identifier or not self.kind or not self.title:
             raise ValueError("Finding requires identifier, kind, and title")
+        object.__setattr__(self, "status", FindingStatus(self.status))
         # Accept lists from rule adapters while keeping values immutable and
         # hash/equality friendly for UI state and tests.
         object.__setattr__(self, "highlight_targets", tuple(self.highlight_targets))
