@@ -1,25 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <salt-grain>
- <name>ConnectivityInspectionPlugin</name>
+ <name>IICSDLConnectivityInspectionPlugin</name>
  <token/>
  <hidden>false</hidden>
- <version>0.1</version>
+ <version>0.2</version>
  <api-version/>
- <title>Connectivity Inspection</title>
- <doc>Visualize connectivity information</doc>
- <doc-url>https://github.com/iic-jku/klayout-connectivity-inspection</doc-url>
+ <title>IIC SDL Connectivity Inspection</title>
+ <doc>CAS findings, cross-probing and real OPEN flight-lines for the IIC SG13G2 SDL workflow</doc>
+ <doc-url>https://github.com/mwolodzk/klayout-connectivity-inspection</doc-url>
  <url/>
  <license>GPLv3</license>
- <author>Martin Jan Köhler</author>
- <author-contact/>
+ <author>Martin Jan Köhler (upstream); Michał Wołodźko / OpenAI Codex (SDL fork)</author>
+ <author-contact>mwolodzk@gmail.com</author-contact>
  <depends>
   <name>KLayoutPluginUtils</name>
   <url/>
   <version>0.28</version>
+ </depends>
+ <depends>
+  <name>IICSDLNetlistImportPlugin</name>
+  <url/>
+  <version>0.13</version>
  </depends>
  <authored-time/>
  <installed-time></installed-time>
  <icon>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</icon>
  <screenshot></screenshot>
 </salt-grain>
-

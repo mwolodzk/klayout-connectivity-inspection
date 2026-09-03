@@ -436,6 +436,11 @@ class ConnectivityBrowserDialog(pya.QDialog):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
 
+        self.snapshot_status_label = pya.QLabel(self)
+        self.snapshot_status_label.setWordWrap(True)
+        self.snapshot_status_label.hide()
+        layout.addWidget(self.snapshot_status_label)
+
         self.tabs = pya.QTabWidget(self)
         layout.addWidget(self.tabs)
 
@@ -468,6 +473,27 @@ class ConnectivityBrowserDialog(pya.QDialog):
         """Replace findings supplied by a checker and retain surviving selection."""
         self.findings_page.replace_findings(findings)
         self._notify_findings_selection()
+
+    def update_snapshot_status(self, kind: str, message: str) -> None:
+        """Show why an empty Findings tab is empty instead of failing silently."""
+        if kind == "ready":
+            self.snapshot_status_label.hide()
+            return
+        colors = {
+            "missing": ("#fff3cd", "#664d03", "#ffecb5"),
+            "not_analyzed": ("#fff3cd", "#664d03", "#ffecb5"),
+            "stale": ("#f8d7da", "#842029", "#f5c2c7"),
+            "error": ("#f8d7da", "#842029", "#f5c2c7"),
+        }
+        background, foreground, border = colors.get(
+            kind, ("#e2e3e5", "#41464b", "#d3d6d8")
+        )
+        self.snapshot_status_label.setText("SDL: " + message)
+        self.snapshot_status_label.setStyleSheet(
+            "QLabel { background: %s; color: %s; border: 1px solid %s; padding: 8px; }"
+            % (background, foreground, border)
+        )
+        self.snapshot_status_label.show()
 
     def select_findings(self, identifiers: Iterable[str]) -> FindingSelection:
         """UI selection hook; callback receives union bbox and probe targets."""

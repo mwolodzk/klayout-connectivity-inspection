@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -19,6 +21,71 @@ class SnapshotFormatError(ValueError):
     """The sidecar is present but cannot safely be displayed as findings."""
 
 
+@dataclass(frozen=True)
+class SnapshotState:
+    kind: str
+    message: str
+
+
+@dataclass(frozen=True)
+class SnapshotPinAccess:
+    pin_id: str
+    bbox: Tuple[float, float, float, float]
+    point: Tuple[float, float]
+    layer: str
+
+
+def snapshot_state_for_layout(layout_path: str) -> SnapshotState:
+    """Explain whether Findings/flight-lines are ready for this layout."""
+    sidecar_path = sidecar_path_for_layout(layout_path)
+    if not sidecar_path.is_file():
+        return SnapshotState(
+            "missing",
+            "No SDL sidecar was found. Import the source netlist into this saved "
+            "OAS layout, then run the PDK SDL analysis.",
+        )
+    try:
+        document = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SnapshotFormatError("Invalid SDL JSON in {}: {}".format(sidecar_path, error))
+    if not isinstance(document, Mapping):
+        raise SnapshotFormatError("SDL sidecar root must be an object")
+    snapshot = document.get("snapshot", document)
+    if snapshot is None:
+        return SnapshotState(
+            "not_analyzed",
+            "Expected connectivity is loaded, but the SDL snapshot is empty. "
+            "The official PDK LVS/NET_ONLY extraction alone does not populate "
+            "Findings. Run the SG13G2 SDL adapter and comparison, then Refresh.",
+        )
+    if not isinstance(snapshot, Mapping):
+        raise SnapshotFormatError("SDL sidecar 'snapshot' must be an object or null")
+    source_path = document.get("source_path")
+    digest_mismatch = (
+        document.get("layout_digest") != _file_digest(Path(layout_path))
+        or not isinstance(source_path, str)
+        or document.get("source_digest") != _file_digest(Path(source_path))
+    )
+    if bool(snapshot.get("stale", False)) or digest_mismatch:
+        return SnapshotState(
+            "stale",
+            "The SDL result is stale because the layout or source netlist changed. "
+            "Run SDL analysis again before using flight-lines.",
+        )
+    return SnapshotState("ready", "SDL analysis result loaded.")
+
+
+def _file_digest(path: Path) -> Optional[str]:
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
 def sidecar_path_for_layout(layout_path: str) -> Path:
     """Return the SDL v1 sidecar path: ``<layout>.sdl.json``."""
     return Path(str(layout_path) + ".sdl.json")
@@ -30,6 +97,50 @@ def load_findings_for_layout(layout_path: str) -> Tuple[Finding, ...]:
 
 def load_flight_lines_for_layout(layout_path: str) -> Tuple[SnapshotFlightLine, ...]:
     return load_flight_lines_sidecar(sidecar_path_for_layout(layout_path))
+
+
+def load_pin_access_for_layout(layout_path: str) -> Tuple[SnapshotPinAccess, ...]:
+    """Load deduplicated physical pin access points from a ready snapshot."""
+    snapshot = _read_snapshot(sidecar_path_for_layout(layout_path))
+    if snapshot is None or bool(snapshot.get("stale", False)):
+        return ()
+    observed = snapshot.get("observed", {})
+    if not isinstance(observed, Mapping):
+        raise SnapshotFormatError("SDL sidecar 'observed' must be an object")
+    result: Dict[str, SnapshotPinAccess] = {}
+    for component in observed.values():
+        if not isinstance(component, Mapping):
+            raise SnapshotFormatError("SDL observed component must be an object")
+        access_points = component.get("access_points", ())
+        if not isinstance(access_points, list):
+            raise SnapshotFormatError("SDL component 'access_points' must be a list")
+        for raw in access_points:
+            if not isinstance(raw, Mapping):
+                raise SnapshotFormatError("SDL pin access point must be an object")
+            pin_id = raw.get("pin_id")
+            layer = raw.get("layer", "")
+            if not isinstance(pin_id, str) or not pin_id:
+                raise SnapshotFormatError("SDL pin access point requires non-empty 'pin_id'")
+            bbox = _bbox_tuple(raw.get("bbox"), "pin access bbox")
+            point = _point_tuple(raw.get("point"), "pin access point")
+            result.setdefault(pin_id, SnapshotPinAccess(pin_id, bbox, point, str(layer)))
+    return tuple(result[key] for key in sorted(result))
+
+
+def _point_tuple(value: Any, label: str) -> Tuple[float, float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise SnapshotFormatError("{} must be [x, y]".format(label))
+    if not all(isinstance(coordinate, (int, float)) for coordinate in value):
+        raise SnapshotFormatError("{} coordinates must be numbers".format(label))
+    return float(value[0]), float(value[1])
+
+
+def _bbox_tuple(value: Any, label: str) -> Tuple[float, float, float, float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        raise SnapshotFormatError("{} must be [left, bottom, right, top]".format(label))
+    if not all(isinstance(coordinate, (int, float)) for coordinate in value):
+        raise SnapshotFormatError("{} coordinates must be numbers".format(label))
+    return tuple(float(coordinate) for coordinate in value)
 
 
 def load_findings_sidecar(sidecar_path: Path) -> Tuple[Finding, ...]:

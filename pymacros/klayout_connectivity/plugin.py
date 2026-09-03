@@ -54,8 +54,11 @@ from klayout_connectivity.flight_overlay import (
 from klayout_connectivity.options import ConnectivityOptions, CONFIG_KEY__CONNECTIVITY_OPTIONS
 from klayout_connectivity.sdl_snapshot import (
     SnapshotFormatError,
+    SnapshotState,
     load_findings_for_layout,
     load_flight_lines_for_layout,
+    load_pin_access_for_layout,
+    snapshot_state_for_layout,
 )
 from klayout_connectivity.user_manual import SDLUserManualDialog
 
@@ -180,6 +183,8 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self.markers_instance_names = []
         self.markers_findings = []
         self.sdl_flight_lines = ()
+        self.sdl_pin_access_points = ()
+        self.sdl_snapshot_state = ("missing", "No layout is available for SDL analysis.")
         self.flight_lines_mode = VisibilityMode.ALL_OPENS
         self.flight_lines_selected = ()
         self.flight_line_marker_seam = FlightLineMarkerSeam(
@@ -598,6 +603,7 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         # Load the public snapshot before painting.  This also resets the
         # cached lines when a previously reported OPEN was fixed.
         self._load_layout_sidecar_findings()
+        self._include_snapshot_pin_infos(self.conn_info)
         
         self.update_markers()
         
@@ -709,22 +715,94 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         layout_filename = self._layout_filename()
         if not layout_filename:
             self.sdl_flight_lines = ()
+            self.sdl_pin_access_points = ()
+            self.sdl_snapshot_state = (
+                "missing", "Save the layout as OAS before running SDL analysis."
+            )
             if self.connectivity_browser_dialog is not None:
                 self.connectivity_browser_dialog.update_findings(())
+                self.connectivity_browser_dialog.update_snapshot_status(*self.sdl_snapshot_state)
             return
         try:
+            state = snapshot_state_for_layout(layout_filename)
             findings = load_findings_for_layout(layout_filename)
             flight_lines = load_flight_lines_for_layout(layout_filename)
+            pin_access_points = load_pin_access_for_layout(layout_filename)
+            if state.kind != "ready":
+                # Findings remain reviewable, but stale geometry must not
+                # guide routing or terminal cross-probing.
+                flight_lines = ()
+                pin_access_points = ()
         except FileNotFoundError:
             findings = ()
             flight_lines = ()
+            pin_access_points = ()
+            state = SnapshotState("missing", "No SDL sidecar was found for this layout.")
         except SnapshotFormatError as error:
             print("Connectivity SDL sidecar ignored: {}".format(error))
             findings = ()
             flight_lines = ()
+            pin_access_points = ()
+            state = SnapshotState(
+                "error", "The SDL sidecar is invalid: {}".format(error)
+            )
         self.sdl_flight_lines = flight_lines
+        self.sdl_pin_access_points = pin_access_points
+        self.sdl_snapshot_state = (state.kind, state.message)
         if self.connectivity_browser_dialog is not None:
             self.connectivity_browser_dialog.update_findings(findings)
+            self.connectivity_browser_dialog.update_snapshot_status(*self.sdl_snapshot_state)
+
+    def _include_snapshot_pin_infos(self, conn_info: LayoutConnectivityInfo) -> None:
+        """Feed SG13G2 adapter access points into By Net/By Instance pages."""
+        if not self.sdl_pin_access_points:
+            return
+        points_by_instance: Dict[str, List[Any]] = {}
+        for access in self.sdl_pin_access_points:
+            instance_id, separator, _pin = access.pin_id.rpartition("/")
+            if separator:
+                points_by_instance.setdefault(
+                    self._normalized_target_identifier(instance_id), []
+                ).append(access)
+        for cell in conn_info.cell_infos:
+            for info in cell.pcell_infos:
+                instance_id = self._normalized_target_identifier(
+                    info.hierarchy_path or info.inst_name
+                )
+                if instance_id not in points_by_instance and self.layout is not None:
+                    # Some OAS readers preserve PCell geometry but not custom
+                    # properties on the instance object.  Recover the stable
+                    # path by the import-time/adapter bbox; require uniqueness
+                    # so repeated or transformed hierarchy is never guessed.
+                    box = info.inst.bbox()
+                    scale = float(self.layout.dbu)
+                    info_bbox = (
+                        float(box.left) * scale, float(box.bottom) * scale,
+                        float(box.right) * scale, float(box.top) * scale,
+                    )
+                    candidates = []
+                    for candidate_id, accesses in points_by_instance.items():
+                        access_bbox = accesses[0].bbox
+                        if all(abs(left - right) <= 1e-6
+                               for left, right in zip(info_bbox, access_bbox)):
+                            candidates.append(candidate_id)
+                    if len(candidates) == 1:
+                        instance_id = candidates[0]
+                        info.hierarchy_path = instance_id.replace("/", ".")
+                known = {str(pin.name) for pin in info.pin_infos}
+                for access in points_by_instance.get(instance_id, ()):
+                    pin_name = access.pin_id.rsplit("/", 1)[-1]
+                    if pin_name in known:
+                        continue
+                    x, y = access.point
+                    radius = 0.02
+                    info.pin_infos.append(PinInfo(
+                        name=pin_name,
+                        term_name=pin_name,
+                        bbox=pya.DBox(x - radius, y - radius, x + radius, y + radius),
+                        layers=[],
+                    ))
+                    known.add(pin_name)
 
     def _zoom_to_finding_bbox(self, bbox: BoundingBox):
         """Zoom the current view to the union box supplied by FindingsModel."""
@@ -787,18 +865,29 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         while not iterator.at_end():
             inst = iterator.current_inst_element().inst()
             hierarchy_path = inst.property(PROPERTY_KEY__INSTANCE_INFO__HIERARCHY_PATH)
+            if hierarchy_path in (None, "") and self.conn_info is not None:
+                # OAS can drop custom instance properties while retaining the
+                # PCell instance itself.  _include_snapshot_pin_infos already
+                # restores the stable hierarchy path on the corresponding
+                # connectivity record; reuse that association for selection.
+                for cell_info in self.conn_info.cell_infos:
+                    matching = [
+                        info for info in cell_info.pcell_infos
+                        if info.inst == inst and info.hierarchy_path
+                    ]
+                    if len(matching) == 1:
+                        hierarchy_path = matching[0].hierarchy_path
+                        break
             instance_id = self._normalized_target_identifier(hierarchy_path or inst.cell.name)
             if instance_id in instance_ids:
-                # ObjectInstPath's iterator constructor accepts a
-                # RecursiveShapeIterator only.  For an instance iterator,
-                # build the documented InstElement path explicitly and append
-                # the current element as the selected instance.
+                # Build the instance path with append_path.  Assigning the
+                # raw ``path`` list creates an invalid primary selection in
+                # KLayout 0.30 and opens a modal "does not contain polygons"
+                # error instead of cross-probing the instance.
                 object_path = pya.ObjectInstPath()
                 object_path.cv_index = self.view.active_cellview_index
-                object_path.top = self.cell_view.cell.cell_index()
-                object_path.path = list(iterator.path()) + [
-                    iterator.current_inst_element()
-                ]
+                for element in list(iterator.path()) + [iterator.current_inst_element()]:
+                    object_path.append_path(element)
                 paths.append(object_path)
             iterator.next()
         self.view.object_selection = paths

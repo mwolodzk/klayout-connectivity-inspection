@@ -1,5 +1,12 @@
 # KLayout Plugin: Visualize Connectivity Information
 
+> **IIC SDL fork.** This repository is a fork of Martin Jan Köhler's
+> [`iic-jku/klayout-connectivity-inspection`](https://github.com/iic-jku/klayout-connectivity-inspection).
+> The original plugin, its history, copyright and GPLv3 license are preserved.
+> The IIC SDL integration package in this fork was implemented by OpenAI Codex
+> in the user-requested `gpt-5.6-sol` / `high reasoning` configuration for
+> Michał Wołodźko. It does not claim authorship of the upstream plugin.
+
 <!--
 [![Watch the demo](doc/screenshot-demo-video.gif)](https://youtube.com/watch/v=TODO)
 -->
@@ -36,6 +43,23 @@ TODO
 2. Locate the `ConnectivityInspectionPlugin`, double-click it to select for installation, then click *Apply*
 3. Review and close the package installation report
 4. Confirm macro execution
+
+The Salt.Mine release is named `IICSDLConnectivityInspectionPlugin` and depends
+on the companion `IICSDLNetlistImportPlugin` fork, so the expected-connectivity
+import and CAS inspection path are installed together.
+
+## Verification record
+
+- OpenAI Codex ran the automated Python suites, KLayout 0.30.6 batch tests and
+  visual GUI checks of the incomplete-import warning, Findings multi-select,
+  pin/net population and `OPEN` flight-lines on a copy of a real SG13G2
+  project layout.
+- Michał Wołodźko independently exercised the workflow on pilot project
+  examples and reported the importer-parameter and empty-browser failures that
+  this release diagnoses and fixes.
+
+The companion fork is
+[`mwolodzk/klayout-netlist-import`](https://github.com/mwolodzk/klayout-netlist-import).
 
 ## Technical Details about Connectivity Information
 

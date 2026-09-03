@@ -14,7 +14,9 @@ from klayout_connectivity.sdl_snapshot import (  # noqa: E402
     load_flight_lines_sidecar,
     load_findings_for_layout,
     load_findings_sidecar,
+    load_pin_access_for_layout,
     sidecar_path_for_layout,
+    snapshot_state_for_layout,
 )
 
 
@@ -83,6 +85,56 @@ class SdlSnapshotTest(unittest.TestCase):
             sidecar = Path(directory) / "chip.gds.sdl.json"
             sidecar.write_text(json.dumps({"schema": "1.0", "snapshot": None}), encoding="utf-8")
             self.assertEqual(load_findings_sidecar(sidecar), ())
+
+    def test_explains_missing_analysis_when_sidecar_snapshot_is_null(self):
+        with tempfile.TemporaryDirectory() as directory:
+            layout = Path(directory) / "chip.oas"
+            sidecar = sidecar_path_for_layout(str(layout))
+            sidecar.write_text(
+                json.dumps({"schema": "1.0", "expected": {"VDD": []}, "snapshot": None}),
+                encoding="utf-8",
+            )
+            state = snapshot_state_for_layout(str(layout))
+
+        self.assertEqual(state.kind, "not_analyzed")
+        self.assertIn("LVS/NET_ONLY", state.message)
+        self.assertIn("SDL adapter", state.message)
+
+    def test_detects_file_change_after_ready_snapshot(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            layout = Path(directory) / "chip.oas"
+            source = Path(directory) / "chip.spice"
+            layout.write_bytes(b"v1")
+            source.write_bytes(b"source")
+            digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+            sidecar_path_for_layout(str(layout)).write_text(json.dumps({
+                "layout_digest": digest(layout),
+                "source_digest": digest(source),
+                "source_path": str(source),
+                "snapshot": {"stale": False, "findings": []},
+            }), encoding="utf-8")
+            self.assertEqual(snapshot_state_for_layout(str(layout)).kind, "ready")
+            layout.write_bytes(b"v2")
+            self.assertEqual(snapshot_state_for_layout(str(layout)).kind, "stale")
+
+    def test_loads_snapshot_pin_access_for_browser(self):
+        with tempfile.TemporaryDirectory() as directory:
+            layout = Path(directory) / "chip.oas"
+            sidecar_path_for_layout(str(layout)).write_text(json.dumps({
+                "snapshot": {
+                    "stale": False,
+                    "observed": {"c1": {"access_points": [{
+                        "pin_id": "TOP/X1/D", "bbox": [1, 2, 3, 4],
+                        "point": [1, 3], "layer": "bbox",
+                    }]}}
+                }
+            }), encoding="utf-8")
+
+            points = load_pin_access_for_layout(str(layout))
+
+        self.assertEqual(points[0].pin_id, "TOP/X1/D")
+        self.assertEqual(points[0].point, (1.0, 3.0))
 
     def test_loads_only_flight_lines_backed_by_open_and_rejects_short_or_wrong_net(self):
         with tempfile.TemporaryDirectory() as directory:
