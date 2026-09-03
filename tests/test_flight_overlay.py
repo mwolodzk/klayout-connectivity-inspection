@@ -9,7 +9,13 @@ from klayout_connectivity.flight_overlay import (  # noqa: E402
     FlightLineMarkerSeam,
     SnapshotFlightLine,
     VisibilityMode,
+    selected_identifiers_for_mode,
     visible_flight_lines,
+)
+from klayout_connectivity.findings import (  # noqa: E402
+    Finding,
+    FindingTarget,
+    FindingsModel,
 )
 
 
@@ -42,6 +48,33 @@ class FlightOverlayTest(unittest.TestCase):
         self.assertEqual(calls[0][0], "create")
         self.assertEqual(calls[1], ("destroy", 1))
         self.assertEqual(seam.markers, ())
+
+    def test_browser_multi_selection_drives_all_selected_modes(self):
+        selection = FindingsModel((
+            Finding(
+                "one", "OPEN", "First",
+                highlight_targets=(FindingTarget("pin", "TOP/X1/D"),),
+                cross_probe_targets=(FindingTarget("net", "out"),),
+            ),
+            Finding(
+                "two", "OPEN", "Second",
+                highlight_targets=(FindingTarget("instance", "TOP/X2"),),
+                cross_probe_targets=(FindingTarget("pin", "TOP/X3/G"),),
+            ),
+        )).set_selection(("one", "two"))
+
+        self.assertEqual(
+            selected_identifiers_for_mode(selection, VisibilityMode.SELECTED_NETS),
+            ("out",),
+        )
+        self.assertEqual(
+            selected_identifiers_for_mode(selection, VisibilityMode.SELECTED_PINS),
+            ("TOP/X1/D", "TOP/X3/G"),
+        )
+        self.assertEqual(
+            selected_identifiers_for_mode(selection, VisibilityMode.SELECTED_INSTANCES),
+            ("TOP/X1", "TOP/X2", "TOP/X3"),
+        )
 
 
 if __name__ == "__main__":

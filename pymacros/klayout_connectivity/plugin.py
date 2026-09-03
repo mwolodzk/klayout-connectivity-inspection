@@ -46,6 +46,7 @@ from klayout_connectivity.findings_selection import FindingsSelectionAdapter
 from klayout_connectivity.flight_overlay import (
     FlightLineMarkerSeam,
     VisibilityMode,
+    selected_identifiers_for_mode,
     visible_flight_lines,
 )
 from klayout_connectivity.options import ConnectivityOptions, CONFIG_KEY__CONNECTIVITY_OPTIONS
@@ -401,7 +402,7 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                 self.connectivity_browser_dialog = ConnectivityBrowserDialog(
                     mw,
                     refresh_callback=self.refresh_connectivity_info,
-                    findings_selection_callback=self.findings_selection_adapter.apply,
+                    findings_selection_callback=self._apply_findings_selection,
                 )
             
             self.connectivity_browser_dialog.update_from_conn_info(self.conn_info)
@@ -413,6 +414,22 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         except Exception as e:
             print("ConnectivityPluginFactory.open_connectivity_browser caught an exception", e)
             traceback.print_exc()        
+
+    def _apply_findings_selection(self, selection: FindingSelection):
+        """Cross-probe a browser multi-selection and update selected overlays."""
+        self.findings_selection_adapter.apply(selection)
+        try:
+            mode = VisibilityMode(self.options.flight_lines_mode)
+        except ValueError:
+            mode = VisibilityMode.ALL_OPENS
+        if mode in (
+            VisibilityMode.SELECTED_NETS,
+            VisibilityMode.SELECTED_PINS,
+            VisibilityMode.SELECTED_INSTANCES,
+        ):
+            self.set_flight_lines_visibility(
+                mode, selected_identifiers_for_mode(selection, mode)
+            )
         
     def on_current_view_changed(self):
         if Debugging.DEBUG:

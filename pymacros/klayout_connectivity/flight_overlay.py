@@ -71,6 +71,36 @@ def visible_flight_lines(
     return ()
 
 
+def selected_identifiers_for_mode(selection, mode: VisibilityMode) -> Tuple[str, ...]:
+    """Translate Findings selection targets to one flight-line selector.
+
+    Findings already carry stable net/pin/instance targets.  Keeping this
+    conversion pure lets the real Qt multi-selection drive all three selected
+    visibility modes without coupling the overlay model to the browser.
+    """
+    mode = VisibilityMode(mode)
+    if mode == VisibilityMode.SELECTED_NETS:
+        target_type = "net"
+    elif mode == VisibilityMode.SELECTED_PINS:
+        target_type = "pin"
+    elif mode == VisibilityMode.SELECTED_INSTANCES:
+        target_type = "instance"
+    else:
+        return ()
+    values = {
+        str(target.identifier)
+        for target in tuple(selection.highlight_targets) + tuple(selection.cross_probe_targets)
+        if target.target_type == target_type
+    }
+    if target_type == "instance":
+        values.update(
+            _normalized_identifier(target.identifier).rsplit("/", 1)[0]
+            for target in tuple(selection.highlight_targets) + tuple(selection.cross_probe_targets)
+            if target.target_type == "pin" and "/" in _normalized_identifier(target.identifier)
+        )
+    return tuple(sorted(values))
+
+
 class FlightLineMarkerSeam:
     """KLayout-facing lifecycle seam, testable with two ordinary callbacks.
 
@@ -105,5 +135,6 @@ __all__ = [
     "Point",
     "SnapshotFlightLine",
     "VisibilityMode",
+    "selected_identifiers_for_mode",
     "visible_flight_lines",
 ]
