@@ -26,6 +26,13 @@ path so large streamed hierarchies do not freeze the editor.
 The complete Polish workflow is available inside KLayout under *Tools* →
 *Connectivity Inspection* → *SDL / CAS User Manual...*. It covers every
 import field, batch analysis, flight-line modes and the Findings/CAS browser.
+
+For SG13G2, save the OAS layout and choose *Tools* → *Connectivity
+Inspection* → *Run SG13G2 SDL Analysis...*, or use the equivalent button at
+the bottom of the Connectivity Browser. Extraction and comparison run in a
+separate KLayout process; the Browser refreshes automatically when it
+finishes. An unsaved layout is rejected so the displayed result cannot refer
+to older on-disk geometry. The batch log is written as `<layout>.sdl.log`.
    
 This add-on can be installed through [KLayout](https://klayout.de) package manager, [see installation instructions here](#installation-instructions)
 
@@ -58,8 +65,8 @@ import and CAS inspection path are installed together.
 
 - OpenAI Codex ran the automated Python suites, KLayout 0.30.6 batch tests and
   visual GUI checks of the incomplete-import warning, Findings multi-select,
-  pin/net population and `OPEN` flight-lines on a copy of a real SG13G2
-  project layout.
+  pin/net population, the non-blocking analysis launcher and `OPEN`
+  flight-lines on the real SG13G2 Active-quenching pilot layout.
 - Michał Wołodźko independently exercised the workflow on pilot project
   examples and reported the importer-parameter and empty-browser failures that
   this release diagnoses and fixes.

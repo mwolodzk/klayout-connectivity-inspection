@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import os 
+import subprocess
 import traceback
 from typing import *
 
@@ -59,6 +60,10 @@ from klayout_connectivity.sdl_snapshot import (
     load_flight_lines_for_layout,
     load_pin_access_for_layout,
     snapshot_state_for_layout,
+)
+from klayout_connectivity.sdl_analysis_launcher import (
+    build_sg13g2_command,
+    find_batch_script,
 )
 from klayout_connectivity.user_manual import SDLUserManualDialog
 
@@ -185,6 +190,10 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self.sdl_flight_lines = ()
         self.sdl_pin_access_points = ()
         self.sdl_snapshot_state = ("missing", "No layout is available for SDL analysis.")
+        self.sdl_analysis_process = None
+        self.sdl_analysis_timer = None
+        self.sdl_analysis_log = None
+        self.sdl_analysis_log_path = None
         self.flight_lines_mode = VisibilityMode.ALL_OPENS
         self.flight_lines_selected = ()
         self.flight_line_marker_seam = FlightLineMarkerSeam(
@@ -272,6 +281,14 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         action.on_triggered += lambda: self.open_connectivity_browser()
         menu.insert_item(f"tools_menu.connectivity_menu.#2", f"open_connectivity_browser", action)
         self._menu_action_open_connectivity_browser = action
+
+        action = pya.Action()
+        action.title = "Run SG13G2 SDL Analysis..."
+        action.on_triggered += lambda: self.run_sg13g2_sdl_analysis()
+        menu.insert_item(
+            "tools_menu.connectivity_menu.#3", "run_sg13g2_sdl_analysis", action
+        )
+        self._menu_action_run_sdl_analysis = action
 
         action = pya.Action()
         action.title = "SDL / CAS User Manual..."
@@ -438,6 +455,7 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                     mw,
                     refresh_callback=self.refresh_connectivity_info,
                     findings_selection_callback=self._apply_findings_selection,
+                    analysis_callback=self.run_sg13g2_sdl_analysis,
                 )
             
             self.connectivity_browser_dialog.update_from_conn_info(self.conn_info)
@@ -449,6 +467,104 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         except Exception as e:
             print("ConnectivityPluginFactory.open_connectivity_browser caught an exception", e)
             traceback.print_exc()        
+
+    @staticmethod
+    def _bool_api_value(owner, name: str) -> bool:
+        value = getattr(owner, name, False)
+        return bool(value() if callable(value) else value)
+
+    def run_sg13g2_sdl_analysis(self):
+        """Start extraction/comparison in a separate KLayout batch process."""
+        cv = self.cell_view
+        if cv is None or cv.cell is None:
+            qmessagebox_critical(
+                "Error", "SG13G2 SDL analysis failed", "No layout is open to analyze."
+            )
+            return
+        layout_filename = self._layout_filename()
+        if not layout_filename or not os.path.isfile(layout_filename):
+            qmessagebox_critical(
+                "Save required",
+                "SG13G2 SDL analysis was not started",
+                "Save the layout as an OASIS file before running SDL analysis.",
+            )
+            return
+        if self._bool_api_value(cv, "is_dirty"):
+            qmessagebox_critical(
+                "Save required",
+                "SG13G2 SDL analysis was not started",
+                "This layout has unsaved changes. Save it first so expected and observed connectivity refer to the same geometry.",
+            )
+            return
+        if self.sdl_analysis_process is not None and self.sdl_analysis_process.poll() is None:
+            if self.connectivity_browser_dialog is not None:
+                self.connectivity_browser_dialog.raise_()
+            return
+
+        script = find_batch_script()
+        if script is None:
+            qmessagebox_critical(
+                "Missing adapter",
+                "SG13G2 SDL analysis failed",
+                "The Netlist Import SG13G2 batch adapter was not found in this KLayout profile.",
+            )
+            return
+        try:
+            command = build_sg13g2_command(script, layout_filename, str(cv.cell.name))
+            self.sdl_analysis_log_path = layout_filename + ".sdl.log"
+            self.sdl_analysis_log = open(self.sdl_analysis_log_path, "w", encoding="utf-8")
+            self.sdl_analysis_process = subprocess.Popen(
+                command,
+                stdout=self.sdl_analysis_log,
+                stderr=subprocess.STDOUT,
+                close_fds=True,
+            )
+        except Exception as error:
+            if self.sdl_analysis_log is not None:
+                self.sdl_analysis_log.close()
+                self.sdl_analysis_log = None
+            qmessagebox_critical(
+                "Error", "SG13G2 SDL analysis failed", str(error)
+            )
+            return
+
+        if self.connectivity_browser_dialog is None:
+            self.open_connectivity_browser()
+        if self.connectivity_browser_dialog is not None:
+            self.connectivity_browser_dialog.set_analysis_running(True)
+            self.connectivity_browser_dialog.update_snapshot_status(
+                "analyzing",
+                "SG13G2 extraction and comparison are running in a separate process. The browser will refresh automatically.",
+            )
+        self.sdl_analysis_timer = pya.QTimer(pya.MainWindow.instance())
+        self.sdl_analysis_timer.timeout.connect(self._poll_sg13g2_sdl_analysis)
+        self.sdl_analysis_timer.start(250)
+
+    def _poll_sg13g2_sdl_analysis(self):
+        process = self.sdl_analysis_process
+        if process is None or process.poll() is None:
+            return
+        exit_code = process.returncode
+        if self.sdl_analysis_timer is not None:
+            self.sdl_analysis_timer.stop()
+            self.sdl_analysis_timer = None
+        if self.sdl_analysis_log is not None:
+            self.sdl_analysis_log.close()
+            self.sdl_analysis_log = None
+        self.sdl_analysis_process = None
+        if self.connectivity_browser_dialog is not None:
+            self.connectivity_browser_dialog.set_analysis_running(False)
+        if exit_code == 0:
+            self.refresh_connectivity_info()
+            print("SG13G2 SDL analysis completed; browser refreshed")
+            return
+        message = "Analysis exited with code {}. See {}".format(
+            exit_code, self.sdl_analysis_log_path
+        )
+        self.sdl_snapshot_state = ("error", message)
+        if self.connectivity_browser_dialog is not None:
+            self.connectivity_browser_dialog.update_snapshot_status(*self.sdl_snapshot_state)
+        qmessagebox_critical("Error", "SG13G2 SDL analysis failed", message)
 
     def _apply_findings_selection(self, selection: FindingSelection):
         """Cross-probe a browser multi-selection and update selected overlays."""

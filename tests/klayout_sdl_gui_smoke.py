@@ -30,12 +30,15 @@ expected_nets = int(str(globals().get("expected_nets") or 0))
 expected_pins = int(str(globals().get("expected_pins") or 0))
 expect_static = str(globals().get("expect_static") or "false").lower() == "true"
 show_manual = str(globals().get("show_manual") or "false").lower() == "true"
+run_analysis = str(globals().get("run_analysis") or "false").lower() == "true"
 
 menu = pya.MainWindow.instance().menu()
 import_action = menu.action("file_menu.import_menu.import_netlist")
 assert import_action is not None and import_action.title == "Netlist", import_action
 browser_action = menu.action("tools_menu.connectivity_menu.open_connectivity_browser")
 assert browser_action is not None and browser_action.title == "Open Connectivity Browser", browser_action
+analysis_action = menu.action("tools_menu.connectivity_menu.run_sg13g2_sdl_analysis")
+assert analysis_action is not None and analysis_action.title == "Run SG13G2 SDL Analysis...", analysis_action
 import_manual_action = menu.action("file_menu.import_menu.netlist_import_sdl_manual")
 assert import_manual_action is not None and import_manual_action.title == "Netlist Import / SDL Manual...", import_manual_action
 manual_action = menu.action("tools_menu.connectivity_menu.sdl_user_manual")
@@ -69,6 +72,7 @@ if expect_static:
 factory.open_connectivity_browser()
 dialog = factory.connectivity_browser_dialog
 assert dialog is not None and dialog.isVisible()
+assert dialog.run_analysis_pb.text == "Run SG13G2 SDL Analysis"
 dialog.tabs.setCurrentIndex(2)
 page = dialog.findings_page
 print("SDL_GUI_BROWSER nets=%d findings=%d" % (
@@ -79,6 +83,18 @@ assert page.findings_tw.topLevelItemCount == expected_findings
 if expected_nets:
     assert dialog.by_net_page.net_tw.topLevelItemCount == expected_nets
 assert dialog.snapshot_status_label.isHidden(), dialog.snapshot_status_label.text
+if run_analysis:
+    dialog.on_run_analysis()
+    assert factory.sdl_analysis_process is not None
+    assert not dialog.run_analysis_pb.enabled
+    analysis_deadline = time.monotonic() + 30
+    while factory.sdl_analysis_process is not None and time.monotonic() < analysis_deadline:
+        pya.Application.instance().process_events()
+        time.sleep(0.05)
+    assert factory.sdl_analysis_process is None, "SDL analysis did not finish"
+    assert factory.sdl_snapshot_state[0] == "ready", factory.sdl_snapshot_state
+    assert dialog.findings_page.findings_tw.topLevelItemCount == expected_findings
+    assert dialog.run_analysis_pb.enabled
 for index in range(min(2, expected_findings)):
     page.findings_tw.topLevelItem(index).setSelected(True)
 pya.Application.instance().process_events()

@@ -28,8 +28,8 @@
  <li>Wybierz <b>File → Import → Netlist</b>.</li>
  <li>W <b>Source File</b> wskaż netlistę SPICE/CDL, sprawdź mapowanie i placement, następnie kliknij <b>Import</b>.</li>
  <li>Zapisz layout jako OASIS. OAS zachowuje wymagane właściwości <code>INSTANCE_INFO__*</code>.</li>
- <li>Uruchom batch <b>SDL</b> właściwy dla PDK. Ma on wykonać LVS extraction, comparison i utworzyć aktualny <code>&lt;layout&gt;.sdl.json</code> oraz <code>&lt;layout&gt;.sdl.lyrdb</code>. Samo menu <b>SG13G2 PDK → LVS</b> nie wykonuje comparison SDL.</li>
- <li>Wybierz <b>Tools → Connectivity Inspection → Show Connectivity Panel</b>, ustaw <b>Flight-lines: All Opens</b> i kliknij <b>Refresh</b>.</li>
+ <li>Po zapisaniu layoutu wybierz <b>Tools → Connectivity Inspection → Run SG13G2 SDL Analysis</b> albo kliknij ten sam przycisk w Connectivity Browser. Osobny proces wykona LVS extraction, comparison i utworzy aktualny <code>&lt;layout&gt;.sdl.json</code> oraz <code>&lt;layout&gt;.sdl.lyrdb</code>. Samo menu <b>SG13G2 PDK → LVS</b> nie wykonuje comparison SDL.</li>
+ <li>Po zakończeniu Browser odświeży się automatycznie. Ustaw <b>Flight-lines: All Opens</b>; ręczny <b>Refresh</b> jest potrzebny tylko po zmianie plików poza GUI.</li>
  <li>Kliknij <b>Open Connectivity Browser</b>. To jest okno CAS tego przepływu; wyniki znajdują się w zakładce <b>Findings</b>.</li>
 </ol>
 <div class="warn"><b>Uwaga:</b> plik <code>.sch</code> trzeba najpierw znetlistować w Xschem do SPICE/CDL. Nie używaj GDS jako nośnika właściwości instancji SDL.</div>
@@ -60,7 +60,7 @@
 <h2 id="analysis">3. Analiza expected kontra observed</h2>
 <p>Importer dostarcza expected connectivity i binding instancji, a LVS/adapter PDK dostarcza observed connectivity. Analiza jest wykonywana w osobnym procesie KLayout batch, więc edytor pozostaje responsywny. Wynik trafia do sidecara i Report Database, bez modyfikowania geometrii layoutu.</p>
 <div class="warn"><b>Ważne dla SG13G2:</b> polecenie LVS uruchomione bez source netlisty przechodzi w <code>NET_ONLY</code> i zapisuje jedynie <code>*_extracted.cir</code>. Nie uzupełnia pola <code>snapshot</code> w sidecarze SDL, więc Findings pozostaje puste. Użyj kompletnego polecenia poniżej.</div>
-<p>Zapisz i zamknij edytowany layout albo upewnij się, że wszystkie zmiany są zapisane. Przykład dla SG13G2 (podmień <code>layout</code> i <code>top</code>):</p>
+<p>Zapisz layout (brak znacznika <code>[+]</code> w tytule) i kliknij <b>Run SG13G2 SDL Analysis</b> w Browserze. Przycisk pokazuje stan pracy i po sukcesie automatycznie wczytuje Findings. Odpowiednik terminalowy dla automatyzacji (podmień <code>layout</code> i <code>top</code>):</p>
 <pre>PATH="$HOME/.local/bin:$PATH" iic-ihp klayout -b \
   -r /foss/designs/.klayout-ihp/salt/NetlistImportPlugin/pymacros/klayout_netlist_importer/sg13g2_sdl_batch.py \
   -rd layout=/foss/designs/quenching/layout/NAZWA.oas \
@@ -73,7 +73,7 @@
  <li>Otwórz <b>Tools → Connectivity Inspection → Show Connectivity Panel</b>.</li>
  <li>Włącz <b>Show Connectivity Information</b> i <b>Flywires</b>.</li>
  <li>Wybierz tryb <b>Flight-lines</b>: <b>Off</b>, <b>Selected Nets</b>, <b>Selected Pins</b>, <b>Selected Instances</b> albo <b>All Opens</b>.</li>
- <li>Kliknij <b>Refresh</b>, potem <b>Open Connectivity Browser</b>.</li>
+ <li>Kliknij <b>Open Connectivity Browser</b>. Gdy pasek mówi, że snapshot jest pusty albo nieaktualny, zapisz layout i kliknij <b>Run SG13G2 SDL Analysis</b>.</li>
  <li>W zakładce <b>Findings</b> filtruj typy, zaznaczaj wiele wpisów oraz używaj zoom, highlight i cross-probe. Dostępne statusy to <b>active</b>, <b>visited</b> i <b>waived</b>.</li>
 </ol>
 <p>Flight-lines są rysowane wyłącznie dla rzeczywistych <b>OPEN</b>. Sieć złożona z <code>k</code> rozłącznych komponentów otrzymuje <code>k-1</code> linii MST pomiędzy najbliższymi access points. <b>SHORT</b>, <b>WRONG_NET</b>, <b>UNBOUND</b>, <b>MISSING</b>, <b>MASTER_MISMATCH</b> i <b>PARAMETER_MISMATCH</b> są raportowane w Findings, lecz nie generują linii trasowania.</p>

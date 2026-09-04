@@ -3,7 +3,7 @@
  <name>IICSDLConnectivityInspectionPlugin</name>
  <token/>
  <hidden>false</hidden>
- <version>0.2</version>
+ <version>0.3</version>
  <api-version/>
  <title>IIC SDL Connectivity Inspection</title>
  <doc>CAS findings, cross-probing and real OPEN flight-lines for the IIC SG13G2 SDL workflow</doc>

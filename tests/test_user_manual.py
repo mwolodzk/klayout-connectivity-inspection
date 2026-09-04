@@ -18,6 +18,7 @@ def test_manual_covers_complete_user_flow():
         "stale=false",
         "All Opens",
         "Open Connectivity Browser",
+        "Run SG13G2 SDL Analysis",
         "okno CAS",
         "XH018",
         "klayout_sdl_gui_smoke.py",
@@ -30,3 +31,4 @@ def test_connectivity_menu_exposes_manual():
     assert "tools_menu.connectivity_menu.end" in source
     assert "sdl_user_manual" in source
     assert "SDL / CAS User Manual..." in source
+    assert "run_sg13g2_sdl_analysis" in source

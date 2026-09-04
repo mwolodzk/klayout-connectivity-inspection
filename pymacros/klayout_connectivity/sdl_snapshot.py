@@ -56,7 +56,8 @@ def snapshot_state_for_layout(layout_path: str) -> SnapshotState:
             "not_analyzed",
             "Expected connectivity is loaded, but the SDL snapshot is empty. "
             "The official PDK LVS/NET_ONLY extraction alone does not populate "
-            "Findings. Run the SG13G2 SDL adapter and comparison, then Refresh.",
+            "Findings. Save the layout and click Run SG13G2 SDL Analysis below "
+            "to start the SDL adapter and comparison.",
         )
     if not isinstance(snapshot, Mapping):
         raise SnapshotFormatError("SDL sidecar 'snapshot' must be an object or null")
@@ -70,7 +71,7 @@ def snapshot_state_for_layout(layout_path: str) -> SnapshotState:
         return SnapshotState(
             "stale",
             "The SDL result is stale because the layout or source netlist changed. "
-            "Run SDL analysis again before using flight-lines.",
+            "Save the layout and run SG13G2 SDL Analysis again before using flight-lines.",
         )
     return SnapshotState("ready", "SDL analysis result loaded.")
 

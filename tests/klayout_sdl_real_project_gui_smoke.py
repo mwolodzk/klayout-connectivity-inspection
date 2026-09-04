@@ -24,6 +24,8 @@ import_action = menu.action("file_menu.import_menu.import_netlist")
 assert import_action is not None and import_action.title == "Netlist", import_action
 browser_action = menu.action("tools_menu.connectivity_menu.open_connectivity_browser")
 assert browser_action is not None and browser_action.title == "Open Connectivity Browser", browser_action
+analysis_action = menu.action("tools_menu.connectivity_menu.run_sg13g2_sdl_analysis")
+assert analysis_action is not None and analysis_action.title == "Run SG13G2 SDL Analysis...", analysis_action
 import_manual_action = menu.action("file_menu.import_menu.netlist_import_sdl_manual")
 assert import_manual_action is not None and import_manual_action.title == "Netlist Import / SDL Manual...", import_manual_action
 manual_action = menu.action("tools_menu.connectivity_menu.sdl_user_manual")
@@ -53,6 +55,7 @@ assert direct_instances >= int(globals().get("min_layout_instances") or 1)
 factory.open_connectivity_browser()
 dialog = factory.connectivity_browser_dialog
 assert dialog is not None and dialog.isVisible()
+assert dialog.run_analysis_pb.text == "Run SG13G2 SDL Analysis"
 main_window = pya.MainWindow.instance()
 main_window.showNormal()
 main_window.resize(1280, 850)

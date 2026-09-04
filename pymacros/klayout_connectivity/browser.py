@@ -417,7 +417,8 @@ class ConnectivityBrowserDialog(pya.QDialog):
     """
 
     def __init__(self, parent=None, refresh_callback: Optional[Callable] = None,
-                 findings_selection_callback: Optional[Callable[[FindingSelection], None]] = None):
+                 findings_selection_callback: Optional[Callable[[FindingSelection], None]] = None,
+                 analysis_callback: Optional[Callable] = None):
         super().__init__(parent)
         self.refresh_callback = refresh_callback
         # The current browser has no findings producer yet.  Keeping its state
@@ -425,6 +426,7 @@ class ConnectivityBrowserDialog(pya.QDialog):
         # making the reusable model depend on pya/Qt.
         self.findings_model = FindingsModel()
         self.findings_selection_callback = findings_selection_callback
+        self.analysis_callback = analysis_callback
         self._init_ui()
 
     def _init_ui(self):
@@ -457,12 +459,18 @@ class ConnectivityBrowserDialog(pya.QDialog):
         bottom = pya.QHBoxLayout()
         self.refresh_pb = pya.QPushButton("Refresh")
         bottom.addWidget(self.refresh_pb)
+        self.run_analysis_pb = pya.QPushButton("Run SG13G2 SDL Analysis")
+        self.run_analysis_pb.setToolTip(
+            "Extract observed connectivity and compare it with the imported source netlist"
+        )
+        bottom.addWidget(self.run_analysis_pb)
         bottom.addStretch()
         self.close_pb = pya.QPushButton("Close")
         bottom.addWidget(self.close_pb)
         layout.addLayout(bottom)
 
         self.refresh_pb.clicked.connect(self.on_refresh)
+        self.run_analysis_pb.clicked.connect(self.on_run_analysis)
         self.close_pb.clicked.connect(self.on_close)
 
     def update_from_conn_info(self, conn_info: LayoutConnectivityInfo):
@@ -484,6 +492,7 @@ class ConnectivityBrowserDialog(pya.QDialog):
             "not_analyzed": ("#fff3cd", "#664d03", "#ffecb5"),
             "stale": ("#f8d7da", "#842029", "#f5c2c7"),
             "error": ("#f8d7da", "#842029", "#f5c2c7"),
+            "analyzing": ("#cff4fc", "#055160", "#b6effb"),
         }
         background, foreground, border = colors.get(
             kind, ("#e2e3e5", "#41464b", "#d3d6d8")
@@ -494,6 +503,13 @@ class ConnectivityBrowserDialog(pya.QDialog):
             % (background, foreground, border)
         )
         self.snapshot_status_label.show()
+
+    def set_analysis_running(self, running: bool) -> None:
+        self.run_analysis_pb.setEnabled(not running)
+        self.run_analysis_pb.setText(
+            "SG13G2 SDL Analysis is running..."
+            if running else "Run SG13G2 SDL Analysis"
+        )
 
     def select_findings(self, identifiers: Iterable[str]) -> FindingSelection:
         """UI selection hook; callback receives union bbox and probe targets."""
@@ -519,3 +535,7 @@ class ConnectivityBrowserDialog(pya.QDialog):
             debug("ConnectivityBrowserDialog.on_refresh")
         if self.refresh_callback is not None:
             self.refresh_callback()
+
+    def on_run_analysis(self):
+        if self.analysis_callback is not None:
+            self.analysis_callback()
