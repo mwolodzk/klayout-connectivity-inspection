@@ -39,8 +39,14 @@ TODO
 
 <a id="installation-instructions"></a>
 
+> **Replacement fork:** `IICSDLConnectivityInspectionPlugin` uses the same
+> Python module and menu entry as the upstream `ConnectivityInspectionPlugin`.
+> Disable or uninstall the upstream package in a profile before enabling this
+> fork; do not run both copies together. The existing `iic-ihp` integration
+> already contains this fork's code and does not need a second Salt install.
+
 1. From the main menu, click *Tools*→*Manage Packages* to open the package manager
-2. Locate the `ConnectivityInspectionPlugin`, double-click it to select for installation, then click *Apply*
+2. Locate `IIC SDL Connectivity Inspection`, double-click it to select for installation, then click *Apply*
 3. Review and close the package installation report
 4. Confirm macro execution
 
