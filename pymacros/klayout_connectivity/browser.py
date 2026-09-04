@@ -52,6 +52,14 @@ from klayout_connectivity.findings import (
 _ITEM_INDEX_ROLE = int(pya.Qt.UserRole)
 
 
+def _interactive_columns(tree: pya.QTreeWidget, widths: Sequence[int]) -> None:
+    """Give every column a useful default width while keeping it draggable."""
+    tree.header.setStretchLastSection(False)
+    for column, width in enumerate(widths):
+        tree.header.setSectionResizeMode(column, pya.QHeaderView.Interactive)
+        tree.setColumnWidth(column, width)
+
+
 @dataclass
 class _NetEntry:
     net_name: str
@@ -84,10 +92,12 @@ class ConnectivityByNetPage(pya.QWidget):
     instance+terminal that belongs to the selected net.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, instance_selection_callback: Optional[Callable] = None):
         super().__init__(parent)
 
         self._net_entries_by_index: List[List[_NetEntry]] = []
+        self._detail_entries_by_index: List[_NetEntry] = []
+        self.instance_selection_callback = instance_selection_callback
 
         layout = pya.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -99,25 +109,24 @@ class ConnectivityByNetPage(pya.QWidget):
         self.net_tw.setHeaderLabels(["Net", "Terminals"])
         self.net_tw.setRootIsDecorated(False)
         self.net_tw.setSelectionMode(pya.QAbstractItemView.SingleSelection)
-        self.net_tw.header.setSectionResizeMode(0, pya.QHeaderView.Stretch)
-        self.net_tw.header.setSectionResizeMode(1, pya.QHeaderView.ResizeToContents)
+        _interactive_columns(self.net_tw, (220, 80))
 
         self.detail_tw = pya.QTreeWidget(splitter)
         self.detail_tw.setHeaderLabels(["Instance", "Cell", "Pin", "Terminal"])
         self.detail_tw.setRootIsDecorated(False)
-        for col in range(4):
-            self.detail_tw.header.setSectionResizeMode(col, pya.QHeaderView.ResizeToContents)
-        self.detail_tw.header.setSectionResizeMode(1, pya.QHeaderView.Stretch)
+        _interactive_columns(self.detail_tw, (430, 220, 70, 100))
 
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
 
         self.net_tw.itemSelectionChanged.connect(self.on_net_selection_changed)
+        self.detail_tw.itemSelectionChanged.connect(self.on_detail_selection_changed)
 
     def update_from_conn_info(self, conn_info: LayoutConnectivityInfo):
         self.net_tw.clear()
         self.detail_tw.clear()
         self._net_entries_by_index = []
+        self._detail_entries_by_index = []
 
         entries_by_net: Dict[str, List[_NetEntry]] = {}
         for cell in conn_info.cell_infos:
@@ -139,6 +148,7 @@ class ConnectivityByNetPage(pya.QWidget):
 
     def on_net_selection_changed(self):
         self.detail_tw.clear()
+        self._detail_entries_by_index = []
 
         selected = self.net_tw.selectedItems()
         if not selected:
@@ -157,7 +167,17 @@ class ConnectivityByNetPage(pya.QWidget):
             item.setText(1, _fq_cell_name(entry.pcell))
             item.setText(2, entry.pin.name)
             item.setText(3, entry.pin.term_name)
+            item.setData(0, _ITEM_INDEX_ROLE, len(self._detail_entries_by_index))
+            self._detail_entries_by_index.append(entry)
             self.detail_tw.addTopLevelItem(item)
+
+    def on_detail_selection_changed(self):
+        selected = self.detail_tw.selectedItems()
+        if not selected or self.instance_selection_callback is None:
+            return
+        idx = selected[0].data(0, _ITEM_INDEX_ROLE)
+        if idx is not None:
+            self.instance_selection_callback(self._detail_entries_by_index[idx].pcell)
 
 
 class ConnectivityByInstancePage(pya.QWidget):
@@ -167,10 +187,11 @@ class ConnectivityByInstancePage(pya.QWidget):
     pins, their terminal names, and the net each pin is on.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, instance_selection_callback: Optional[Callable] = None):
         super().__init__(parent)
 
         self._pcells_by_index: List[CellInstanceConnectivityInfo] = []
+        self.instance_selection_callback = instance_selection_callback
 
         layout = pya.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -181,15 +202,12 @@ class ConnectivityByInstancePage(pya.QWidget):
         self.instance_tw = pya.QTreeWidget(splitter)
         self.instance_tw.setHeaderLabels(["Instance", "Cell"])
         self.instance_tw.setSelectionMode(pya.QAbstractItemView.SingleSelection)
-        self.instance_tw.header.setSectionResizeMode(0, pya.QHeaderView.Stretch)
-        self.instance_tw.header.setSectionResizeMode(1, pya.QHeaderView.ResizeToContents)
+        _interactive_columns(self.instance_tw, (330, 220))
 
         self.detail_tw = pya.QTreeWidget(splitter)
         self.detail_tw.setHeaderLabels(["Pin", "Terminal", "Net"])
         self.detail_tw.setRootIsDecorated(False)
-        for col in range(3):
-            self.detail_tw.header.setSectionResizeMode(col, pya.QHeaderView.ResizeToContents)
-        self.detail_tw.header.setSectionResizeMode(2, pya.QHeaderView.Stretch)
+        _interactive_columns(self.detail_tw, (80, 100, 420))
 
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
@@ -257,6 +275,9 @@ class ConnectivityByInstancePage(pya.QWidget):
 
         pcell = self._pcells_by_index[idx]
 
+        if self.instance_selection_callback is not None:
+            self.instance_selection_callback(pcell)
+
         for pin in sorted(pcell.pin_infos, key=lambda p: p.name):
             item = pya.QTreeWidgetItem()
             item.setText(0, pin.name)
@@ -315,10 +336,7 @@ class ConnectivityFindingsPage(pya.QWidget):
         self.findings_tw.setHeaderLabels(["Status", "Kind", "Finding", "ID"])
         self.findings_tw.setRootIsDecorated(False)
         self.findings_tw.setSelectionMode(pya.QAbstractItemView.ExtendedSelection)
-        self.findings_tw.header.setSectionResizeMode(0, pya.QHeaderView.ResizeToContents)
-        self.findings_tw.header.setSectionResizeMode(1, pya.QHeaderView.ResizeToContents)
-        self.findings_tw.header.setSectionResizeMode(2, pya.QHeaderView.Stretch)
-        self.findings_tw.header.setSectionResizeMode(3, pya.QHeaderView.ResizeToContents)
+        _interactive_columns(self.findings_tw, (80, 100, 590, 260))
         layout.addWidget(self.findings_tw)
 
         actions = pya.QHBoxLayout()
@@ -418,7 +436,9 @@ class ConnectivityBrowserDialog(pya.QDialog):
 
     def __init__(self, parent=None, refresh_callback: Optional[Callable] = None,
                  findings_selection_callback: Optional[Callable[[FindingSelection], None]] = None,
-                 analysis_callback: Optional[Callable] = None):
+                 analysis_callback: Optional[Callable] = None,
+                 source_callback: Optional[Callable] = None,
+                 instance_selection_callback: Optional[Callable] = None):
         super().__init__(parent)
         self.refresh_callback = refresh_callback
         # The current browser has no findings producer yet.  Keeping its state
@@ -427,12 +447,14 @@ class ConnectivityBrowserDialog(pya.QDialog):
         self.findings_model = FindingsModel()
         self.findings_selection_callback = findings_selection_callback
         self.analysis_callback = analysis_callback
+        self.source_callback = source_callback
+        self.instance_selection_callback = instance_selection_callback
         self._init_ui()
 
     def _init_ui(self):
         self.setWindowTitle("Connectivity Browser")
         self.setModal(False)
-        self.resize(900, 500)
+        self.resize(1100, 600)
 
         layout = pya.QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
@@ -446,8 +468,12 @@ class ConnectivityBrowserDialog(pya.QDialog):
         self.tabs = pya.QTabWidget(self)
         layout.addWidget(self.tabs)
 
-        self.by_net_page = ConnectivityByNetPage(self)
-        self.by_instance_page = ConnectivityByInstancePage(self)
+        self.by_net_page = ConnectivityByNetPage(
+            self, instance_selection_callback=self.instance_selection_callback
+        )
+        self.by_instance_page = ConnectivityByInstancePage(
+            self, instance_selection_callback=self.instance_selection_callback
+        )
         self.findings_page = ConnectivityFindingsPage(
             self.findings_model, self._notify_findings_selection, self
         )
@@ -459,9 +485,14 @@ class ConnectivityBrowserDialog(pya.QDialog):
         bottom = pya.QHBoxLayout()
         self.refresh_pb = pya.QPushButton("Refresh")
         bottom.addWidget(self.refresh_pb)
-        self.run_analysis_pb = pya.QPushButton("Run SG13G2 SDL Analysis")
+        self.attach_source_pb = pya.QPushButton("Attach SDL Source...")
+        self.attach_source_pb.setToolTip(
+            "Select an Xschem schematic or SPICE/CDL netlist without importing or regenerating layout instances"
+        )
+        bottom.addWidget(self.attach_source_pb)
+        self.run_analysis_pb = pya.QPushButton("Run SDL Analysis")
         self.run_analysis_pb.setToolTip(
-            "Extract observed connectivity and compare it with the imported source netlist"
+            "Read the saved layout, extract observed connectivity and compare it with the attached source; the layout is never written"
         )
         bottom.addWidget(self.run_analysis_pb)
         bottom.addStretch()
@@ -470,6 +501,7 @@ class ConnectivityBrowserDialog(pya.QDialog):
         layout.addLayout(bottom)
 
         self.refresh_pb.clicked.connect(self.on_refresh)
+        self.attach_source_pb.clicked.connect(self.on_attach_source)
         self.run_analysis_pb.clicked.connect(self.on_run_analysis)
         self.close_pb.clicked.connect(self.on_close)
 
@@ -484,7 +516,7 @@ class ConnectivityBrowserDialog(pya.QDialog):
 
     def update_snapshot_status(self, kind: str, message: str) -> None:
         """Show why an empty Findings tab is empty instead of failing silently."""
-        if kind == "ready":
+        if kind == "ready" and " warning:" not in message.casefold():
             self.snapshot_status_label.hide()
             return
         colors = {
@@ -493,6 +525,7 @@ class ConnectivityBrowserDialog(pya.QDialog):
             "stale": ("#f8d7da", "#842029", "#f5c2c7"),
             "error": ("#f8d7da", "#842029", "#f5c2c7"),
             "analyzing": ("#cff4fc", "#055160", "#b6effb"),
+            "ready": ("#fff3cd", "#664d03", "#ffecb5"),
         }
         background, foreground, border = colors.get(
             kind, ("#e2e3e5", "#41464b", "#d3d6d8")
@@ -506,9 +539,16 @@ class ConnectivityBrowserDialog(pya.QDialog):
 
     def set_analysis_running(self, running: bool) -> None:
         self.run_analysis_pb.setEnabled(not running)
+        self.attach_source_pb.setEnabled(not running)
         self.run_analysis_pb.setText(
-            "SG13G2 SDL Analysis is running..."
-            if running else "Run SG13G2 SDL Analysis"
+            "SDL Analysis is running..." if running else "Run SDL Analysis"
+        )
+
+    def set_source_attaching(self, running: bool) -> None:
+        self.attach_source_pb.setEnabled(not running)
+        self.run_analysis_pb.setEnabled(not running)
+        self.attach_source_pb.setText(
+            "Attaching SDL Source..." if running else "Attach SDL Source..."
         )
 
     def select_findings(self, identifiers: Iterable[str]) -> FindingSelection:
@@ -529,12 +569,26 @@ class ConnectivityBrowserDialog(pya.QDialog):
             self.close()
         except Exception as e:
             traceback.print_exc()
+
+    def closeEvent(self, event):
+        """Restore the full overlay when the browser selection disappears."""
+        try:
+            selection = self.findings_model.set_selection(())
+            self.findings_page.refresh()
+            self._notify_findings_selection(selection)
+        except Exception:
+            traceback.print_exc()
+        event.accept()
     
     def on_refresh(self):
         if Debugging.DEBUG:
             debug("ConnectivityBrowserDialog.on_refresh")
         if self.refresh_callback is not None:
             self.refresh_callback()
+
+    def on_attach_source(self):
+        if self.source_callback is not None:
+            self.source_callback()
 
     def on_run_analysis(self):
         if self.analysis_callback is not None:

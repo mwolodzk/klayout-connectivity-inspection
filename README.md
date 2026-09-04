@@ -23,16 +23,54 @@ be limited to selected nets, pins or instances. Static imported cells with
 PCells. Layouts without PCells or importer metadata take a non-expanding fast
 path so large streamed hierarchies do not freeze the editor.
 
+Selecting Findings keeps related flight-lines bright and dims unrelated
+overlay markers by 65%. Selecting an instance in either *By Instance* or the
+detail table of *By Net* centers and zooms the layout view to that instance.
+
+![Selected OPEN finding with unrelated markers dimmed](docs/screenshots/sdl-findings-selection-emphasis.png)
+
+![By Net instance selection centered in the layout](docs/screenshots/sdl-by-net-instance-focus.png)
+
 The complete Polish workflow is available inside KLayout under *Tools* →
 *Connectivity Inspection* → *SDL / CAS User Manual...*. It covers every
 import field, batch analysis, flight-line modes and the Findings/CAS browser.
 
-For SG13G2, save the OAS layout and choose *Tools* → *Connectivity
-Inspection* → *Run SG13G2 SDL Analysis...*, or use the equivalent button at
-the bottom of the Connectivity Browser. Extraction and comparison run in a
-separate KLayout process; the Browser refreshes automatically when it
-finishes. An unsaved layout is rejected so the displayed result cannot refer
-to older on-disk geometry. The batch log is written as `<layout>.sdl.log`.
+For SG13G2 and XH018, save the OAS layout and choose *Tools* → *Connectivity
+Inspection* → *Run SDL Analysis...*, or use the equivalent button in the
+panel or Browser. The active technology/profile selects the PDK adapter.
+Extraction and comparison run in a separate read-only KLayout process; the
+Browser refreshes automatically when it finishes. An unsaved layout is
+rejected so the displayed result cannot refer to older on-disk geometry. The
+batch log is written as `<layout>.sdl.log`.
+
+An existing or frozen XH018 layout does not need to pass through Netlist
+Import. Choose *Attach SDL Source...* and select an Xschem `.sch` file or a
+SPICE/CDL netlist. The companion importer package generates a working SPICE
+netlist for `.sch`, matches source devices to existing instances, and writes
+only SDL sidecars. It never creates, moves, regenerates or writes layout
+cells. SG13G2 currently uses the sidecar created by Netlist Import.
+
+XH018 example:
+
+```sh
+cd ~/eda/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV
+xh018-gds1131 layout/lvsh_diff2HV.oas
+```
+
+Then use *Attach SDL Source...* → select the project schematic → *Run SDL
+Analysis* → *Open Connectivity Browser*. The OAS checksum remains unchanged;
+only `.sdl.json`, `.sdl.lyrdb`, observed-data files and logs are updated.
+
+The following screenshots come from the `xh018-gds1131` pilot run on the
+frozen `lvsh_diff2HV.oas` layout. The Browser loaded 15 expected nets. The
+final bounded adapter covers 13 MOS and four `rnp1h` resistors and reports one
+verified `OPEN` on `cascodeN` plus one physical `GND`--`cascodeN` `SHORT`.
+
+![XH018 lvsh_diff2HV layout with the SDL controls](docs/screenshots/xh018-lvsh-diff2hv-layout.png)
+
+![XH018 expected nets loaded from the existing Xschem schematic](docs/screenshots/xh018-lvsh-diff2hv-by-net.png)
+
+![XH018 CAS findings for the split cascodeN net and physical short](docs/screenshots/xh018-lvsh-diff2hv-findings.png)
    
 This add-on can be installed through [KLayout](https://klayout.de) package manager, [see installation instructions here](#installation-instructions)
 
@@ -40,7 +78,12 @@ This add-on can be installed through [KLayout](https://klayout.de) package manag
 
 ### Tool activation and deactivation
 
-TODO
+Open *Tools → Connectivity Inspection → Show Panel*. Use *Show Connectivity
+Information* to enable instance/pin overlays and *Flywires* to enable
+flight-lines. The selector limits flight-lines to all opens or the current
+net, pin or instance selection. Clearing either checkbox removes the related
+overlay without changing the layout. *Refresh* reloads the current sidecar;
+*Run SDL Analysis* starts the PDK-specific read-only batch comparison.
 
 ## Installation using KLayout Package Manager
 
@@ -49,8 +92,9 @@ TODO
 > **Replacement fork:** `IICSDLConnectivityInspectionPlugin` uses the same
 > Python module and menu entry as the upstream `ConnectivityInspectionPlugin`.
 > Disable or uninstall the upstream package in a profile before enabling this
-> fork; do not run both copies together. The existing `iic-ihp` integration
-> already contains this fork's code and does not need a second Salt install.
+> fork; do not run both copies together. The existing `iic-ihp` and
+> `iic-xh018` integrations already contain this fork's code and do not need a
+> second Salt install.
 
 1. From the main menu, click *Tools*→*Manage Packages* to open the package manager
 2. Locate `IIC SDL Connectivity Inspection`, double-click it to select for installation, then click *Apply*
@@ -66,7 +110,11 @@ import and CAS inspection path are installed together.
 - OpenAI Codex ran the automated Python suites, KLayout 0.30.6 batch tests and
   visual GUI checks of the incomplete-import warning, Findings multi-select,
   pin/net population, the non-blocking analysis launcher and `OPEN`
-  flight-lines on the real SG13G2 Active-quenching pilot layout.
+  flight-lines on the real SG13G2 Active-quenching pilot layout. It also ran
+  the XH018 attach/extract/compare flow through `xh018-gds1131` on the real
+  ECAUSIS `lvsh_diff2HV` layout and verified graphically that the Browser loads
+  expected nets and cross-probes its connectivity findings. The final batch
+  result contains one `cascodeN` open and one physical `GND`--`cascodeN` short.
 - Michał Wołodźko independently exercised the workflow on pilot project
   examples and reported the importer-parameter and empty-browser failures that
   this release diagnoses and fixes.

@@ -14,6 +14,7 @@ from klayout_connectivity.sdl_snapshot import (  # noqa: E402
     load_flight_lines_sidecar,
     load_findings_for_layout,
     load_findings_sidecar,
+    load_browser_instances_for_layout,
     load_pin_access_for_layout,
     sidecar_path_for_layout,
     snapshot_state_for_layout,
@@ -100,6 +101,54 @@ class SdlSnapshotTest(unittest.TestCase):
         self.assertIn("LVS/NET_ONLY", state.message)
         self.assertIn("SDL adapter", state.message)
 
+    def test_source_warnings_are_visible_before_and_after_analysis(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            layout = Path(directory) / "chip.oas"
+            source = Path(directory) / "chip.sch"
+            layout.write_bytes(b"layout")
+            source.write_bytes(b"schematic")
+            digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+            sidecar = sidecar_path_for_layout(str(layout))
+            document = {
+                "layout_digest": digest(layout),
+                "source_digest": digest(source),
+                "source_path": str(source),
+                "source_warnings": ["6 devices omitted: XR1, XC1"],
+                "analysis_warnings": ["XMN1: D/S access is ambiguous"],
+                "snapshot": None,
+            }
+            sidecar.write_text(json.dumps(document), encoding="utf-8")
+            before = snapshot_state_for_layout(str(layout))
+            document["snapshot"] = {"stale": False, "findings": []}
+            sidecar.write_text(json.dumps(document), encoding="utf-8")
+            after = snapshot_state_for_layout(str(layout))
+
+        self.assertEqual(before.kind, "not_analyzed")
+        self.assertEqual(after.kind, "ready")
+        self.assertIn("SDL source warning: 6 devices omitted", before.message)
+        self.assertIn("SDL source warning: 6 devices omitted", after.message)
+        self.assertIn("SDL analysis warning: XMN1: D/S access", before.message)
+        self.assertIn("SDL analysis warning: XMN1: D/S access", after.message)
+
+    def test_malformed_source_warnings_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            layout = Path(directory) / "chip.oas"
+            sidecar_path_for_layout(str(layout)).write_text(json.dumps({
+                "source_warnings": "not-a-list", "snapshot": None,
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(SnapshotFormatError, "source_warnings"):
+                snapshot_state_for_layout(str(layout))
+
+    def test_malformed_analysis_warnings_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            layout = Path(directory) / "chip.oas"
+            sidecar_path_for_layout(str(layout)).write_text(json.dumps({
+                "analysis_warnings": ["valid", 3], "snapshot": None,
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(SnapshotFormatError, "analysis_warnings"):
+                snapshot_state_for_layout(str(layout))
+
     def test_detects_file_change_after_ready_snapshot(self):
         import hashlib
         with tempfile.TemporaryDirectory() as directory:
@@ -135,6 +184,83 @@ class SdlSnapshotTest(unittest.TestCase):
 
         self.assertEqual(points[0].pin_id, "TOP/X1/D")
         self.assertEqual(points[0].point, (1.0, 3.0))
+
+    def test_loads_logical_browser_rows_and_physical_geometry_from_sidecar(self):
+        with tempfile.TemporaryDirectory() as directory:
+            layout = Path(directory) / "frozen.oas"
+            sidecar_path_for_layout(str(layout)).write_text(json.dumps({
+                "source_design": {"instances": {
+                    "TOP/XMN1": {
+                        "master": "nel",
+                        "pins": {"B": "GND", "D": "OUT", "G": "IN", "S": "GND"},
+                    },
+                }},
+                "bindings": [{
+                    "source_path": "TOP/XMN1",
+                    "layout_master": "nel$3",
+                    "layout_library": "PRIMLIB_1131",
+                    "placement_bbox": [10, 20, 14, 26],
+                }],
+                "snapshot": {"stale": False, "observed": {
+                    "component-1": {"access_points": [{
+                        "pin_id": "TOP/XMN1/D", "bbox": [11, 24, 12, 25],
+                        "point": [11.5, 24.5], "layer": "Metal1.drawing",
+                    }]},
+                }},
+            }), encoding="utf-8")
+
+            instances = load_browser_instances_for_layout(str(layout))
+
+        self.assertEqual(len(instances), 1)
+        instance = instances[0]
+        self.assertEqual(instance.instance_id, "TOP/XMN1")
+        self.assertEqual(instance.instance_name, "XMN1")
+        self.assertEqual(instance.source_master, "nel")
+        self.assertEqual(instance.layout_master, "nel$3")
+        self.assertEqual(instance.layout_library, "PRIMLIB_1131")
+        self.assertEqual(instance.placement_bbox, (10.0, 20.0, 14.0, 26.0))
+        self.assertEqual([pin.name for pin in instance.pins], ["B", "D", "G", "S"])
+        drain = next(pin for pin in instance.pins if pin.name == "D")
+        self.assertEqual(drain.net, "OUT")
+        self.assertEqual(drain.bbox, (11.0, 24.0, 12.0, 25.0))
+        self.assertEqual(drain.point, (11.5, 24.5))
+        self.assertEqual(drain.layer, "Metal1.drawing")
+        self.assertIsNone(next(pin for pin in instance.pins if pin.name == "G").bbox)
+
+    def test_logical_browser_rows_survive_null_snapshot_and_missing_binding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            layout = Path(directory) / "frozen.oas"
+            sidecar_path_for_layout(str(layout)).write_text(json.dumps({
+                "source_design": {"instances": {
+                    "TOP/XR1": {"master": "rppd", "pins": {"1": "A", "2": "B"}},
+                }},
+                "bindings": [],
+                "snapshot": None,
+            }), encoding="utf-8")
+
+            instances = load_browser_instances_for_layout(str(layout))
+
+        self.assertEqual(instances[0].layout_master, "rppd")
+        self.assertEqual(instances[0].placement_bbox, None)
+        self.assertEqual([(pin.name, pin.net, pin.bbox) for pin in instances[0].pins], [
+            ("1", "A", None), ("2", "B", None),
+        ])
+
+    def test_rejects_malformed_browser_graph_instead_of_guessing(self):
+        malformed_documents = (
+            {"source_design": {"instances": []}, "bindings": []},
+            {"source_design": {"instances": {"TOP/X1": {"pins": ["D"]}}},
+             "bindings": []},
+            {"source_design": {"instances": {}}, "bindings": [{"source_path": 7}]},
+        )
+        for document in malformed_documents:
+            with self.subTest(document=document), tempfile.TemporaryDirectory() as directory:
+                layout = Path(directory) / "frozen.oas"
+                sidecar_path_for_layout(str(layout)).write_text(
+                    json.dumps(document), encoding="utf-8"
+                )
+                with self.assertRaises(SnapshotFormatError):
+                    load_browser_instances_for_layout(str(layout))
 
     def test_loads_only_flight_lines_backed_by_open_and_rejects_short_or_wrong_net(self):
         with tempfile.TemporaryDirectory() as directory:
