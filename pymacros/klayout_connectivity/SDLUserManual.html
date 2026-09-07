@@ -1,143 +1,60 @@
-<!DOCTYPE html>
-<html lang="pl">
-<head>
-<meta charset="utf-8" />
-<title>SDL / CAS — podręcznik użytkownika</title>
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8">
 <style>
- body { font-family: sans-serif; color: #202124; line-height: 1.42; margin: 24px; }
- h1 { color: #174a7e; margin-bottom: 4px; }
- h2 { color: #245f91; border-bottom: 1px solid #c8d7e5; padding-bottom: 4px; }
- h3 { color: #365f7d; }
- code { background: #eef3f7; padding: 1px 4px; }
- .ok { background: #e9f6ec; border-left: 4px solid #2e7d32; padding: 9px; }
- .warn { background: #fff5dd; border-left: 4px solid #c77c02; padding: 9px; }
- .flow { font-size: 110%; background: #edf5fc; padding: 10px; text-align: center; }
- table { border-collapse: collapse; width: 100%; }
- th, td { border: 1px solid #c8d7e5; padding: 6px; vertical-align: top; }
- th { background: #e8f0f7; }
-</style>
-</head>
-<body>
-<h1>SDL / CAS — podręcznik użytkownika</h1>
-<p>Netlist Import + Connectivity Inspection, wersja SDL v1</p>
-<p class="flow"><b>.sch lub SPICE/CDL → Attach SDL Source → read-only LVS/adapter → Findings + flight-lines → CAS</b></p>
+body{font-family:sans-serif;line-height:1.42;margin:22px;max-width:920px}code,pre{font-family:monospace;background:#f3f3f3}pre{padding:10px;white-space:pre-wrap}.ok{background:#e8f5e9;padding:10px}.warn{background:#fff3cd;padding:10px}h1,h2{color:#333}
+</style></head><body>
+<h1>SDL / CAS — instrukcja IHP SG13G2</h1>
+<p><b>SPICE/CDL → Netlist Import → zapis layoutu → Run SDL Analysis → Findings + flight-lines → CAS</b></p>
 
-<h2 id="quick-start">1. Szybki start</h2>
+<h2>1. Przygotowanie źródła</h2>
+<p>V1 przyjmuje netlistę SPICE/CDL. Jeśli projekt powstał w Xschem, najpierw
+wygeneruj z niego netlistę SPICE, a następnie wskaż ten plik w importerze.</p>
+
+<h2>2. Import expected connectivity</h2>
 <ol>
- <li>Uruchom właściwy profil KLayout i otwórz zapisany layout. Dla XH018 użyj <code>xh018-gds1131 layout/NAZWA.oas</code>.</li>
- <li>Dla istniejącego albo zamrożonego layoutu <b>XH018</b> nie wybieraj <b>File → Import → Netlist</b>. Wybierz <b>Tools → Connectivity Inspection → Attach SDL Source...</b> i wskaż źródłowy plik Xschem <code>.sch</code> albo gotową netlistę SPICE/CDL. SG13G2 korzysta obecnie z sidecara utworzonego przez Netlist Import.</li>
- <li>Plik <code>.sch</code> jest netlistowany automatycznie przez Xschem do pliku roboczego. Skrypt odczytuje istniejące instancje i tworzy tylko <code>&lt;layout&gt;.sdl.json</code>; nie regeneruje placementu.</li>
- <li>Wybierz <b>Tools → Connectivity Inspection → Run SDL Analysis</b> albo kliknij ten sam przycisk w panelu lub Connectivity Browser. Osobny proces KLayout batch otwiera OAS wyłącznie do odczytu, wykonuje extraction/comparison i aktualizuje <code>&lt;layout&gt;.sdl.json</code> oraz <code>&lt;layout&gt;.sdl.lyrdb</code>.</li>
- <li>Po zakończeniu Browser odświeży się automatycznie. Ustaw <b>Flight-lines: All Opens</b>; ręczny <b>Refresh</b> jest potrzebny tylko po zmianie plików poza GUI.</li>
- <li>Kliknij <b>Open Connectivity Browser</b>. To jest okno CAS tego przepływu; wyniki znajdują się w zakładce <b>Findings</b>.</li>
+<li>Uruchom <code>iic-ihp klayout -e</code>.</li>
+<li>Wybierz <b>File → Import → Netlist</b>.</li>
+<li>W polu <b>Source File</b> wskaż plik <code>.spice</code>, <code>.spi</code>, <code>.cir</code> lub <code>.cdl</code>.</li>
+<li>W <b>Tech Cell Mapping</b> sprawdź mapowanie modeli na komórki SG13G2. Dla każdego modelu zweryfikuj <b>Netlist Node Order</b>.</li>
+<li>W zakładce <b>Layout</b> wybierz placement, na przykład <b>Packed Mode with Padding</b>, i kliknij <b>Import</b>.</li>
+<li>Przeczytaj raport. Ostrzeżenie wymienia instancje, których nie utworzono, wraz z powodem.</li>
+<li>Zapisz layout. Importer utworzy <code>&lt;layout&gt;.sdl.json</code> z expected connectivity i bindings.</li>
 </ol>
-<div class="ok"><b>Gwarancja bezpieczeństwa:</b> Attach SDL Source i Run SDL Analysis nie wywołują importera placementu ani <code>Layout.write</code>. OAS/GDS jest wejściem read-only; zapisywane są tylko pliki diagnostyczne obok layoutu i logi <code>*.sdl*.log</code>.</div>
+<div class="warn">Nie ignoruj brakującego modelu, złej liczby terminali ani symbolicznego parametru PCell. Popraw netlistę lub mapowanie przed analizą.</div>
 
-<h2 id="import">2. Jak wypełnić Netlist Import</h2>
-<div class="warn"><b>Ta sekcja dotyczy wyłącznie tworzenia nowego layoutu.</b> Dla istniejącego layoutu XH018 przejdź do sekcji 3 i użyj Attach SDL Source, aby nie tworzyć nowych instancji.</div>
-<h3>Netlist Source</h3>
-<table>
- <tr><th>Pole</th><th>Wartość</th></tr>
- <tr><td>Source File</td><td>Pełna ścieżka do pliku <code>.cdl</code>, <code>.cir</code>, <code>.spi</code> albo <code>.spice</code>.</td></tr>
- <tr><td>Format</td><td><b>SPICE Netlist (Simulation format)</b>.</td></tr>
- <tr><td>Hierarchy</td><td><b>Preserve Hierarchy</b>, aby zachować subcircuity i pełne ścieżki instancji.</td></tr>
- <tr><td>Import Mode — komórka</td><td>Zwykle <b>New Cell</b>; gotową komórkę można wskazać jako <b>External Static Cell</b>.</td></tr>
- <tr><td>Import Mode — instancja</td><td><b>Tech Cell Mapping</b> dla elementu PDK, <b>Netlist Cell</b> dla innego subcircuitu albo <b>External Static Cell</b>.</td></tr>
-</table>
+<h2>3. Analiza read-only</h2>
+<ol>
+<li>Layout musi być zapisany i nie może mieć niezapisanych zmian.</li>
+<li>W panelu <b>Connectivity Inspection</b> kliknij <b>Run SDL Analysis</b>.</li>
+<li>Adapter SG13G2 uruchomi się w osobnym procesie batch, odczyta OAS/GDS i zapisze pliki diagnostyczne obok layoutu.</li>
+<li>Analyzer nie wywołuje zapisu geometrii. Nie zmienia komórek, instancji ani warstw layoutu.</li>
+</ol>
+<div class="ok"><b>Bezpieczeństwo:</b> analiza jest read-only dla layoutu. Powstają wyłącznie sidecar <code>&lt;layout&gt;.sdl.json</code>, baza <code>&lt;layout&gt;.sdl.lyrdb</code> i log <code>&lt;layout&gt;.sdl.log</code>.</div>
 
-<h3>Tech Cell Mapping</h3>
-<p>Zacznij od <b>Restore Tech Defaults</b>. Dla każdego modelu sprawdź <b>Target Cell Type</b>, <b>Target Library</b>, <b>Target Cell</b>, <b>Parameters</b>, <b>Multiplier</b> i <b>Netlist Node Order</b>. Kolejność węzłów musi odpowiadać terminalom modelu; inaczej wynik może zawierać fałszywe opens albo shorts.</p>
+<h2>4. Connectivity Browser i CAS</h2>
+<ol>
+<li>Kliknij <b>Open Connectivity Browser</b>.</li>
+<li><b>By Net</b> pokazuje expected net i terminale; <b>By Instance</b> pokazuje instancje i ich piny.</li>
+<li><b>Findings</b> pokazuje OPEN, SHORT, WRONG_NET i błędy powiązań. Kolumny można rozszerzać.</li>
+<li>Zaznaczenie instancji centruje i zbliża layout. Zaznaczenie finding wygasza pozostałe markery i podświetla cel.</li>
+<li>Statusy finding to <b>active</b>, <b>visited</b> i <b>waived</b>.</li>
+</ol>
 
-<h3>Layout</h3>
+<h2>5. Flight-lines</h2>
+<p>Ustaw <b>Flight-lines → All Opens</b>. Linie powstają wyłącznie pomiędzy
+rozłącznymi komponentami tej samej oczekiwanej sieci. Dla <code>k</code>
+komponentów widoczne jest <code>k-1</code> linii MST. SHORT nie jest pokazywany
+jako flight-line — trafia do Findings. Po domknięciu połączenia zapisz layout i
+ponownie uruchom analizę; odpowiednia linia zniknie.</p>
+
+<h2>6. Stale i typowe problemy</h2>
 <ul>
- <li><b>Place first instance at X/Y</b> — początek placementu w µm.</li>
- <li><b>Maximum Number of Columns</b> — liczba kolumn.</li>
- <li><b>Fixed Grid Mode with Pitch</b> — powtarzalny raster.</li>
- <li><b>Packed Mode with Padding</b> — placement bez nakładania bboxów, z odstępem.</li>
-</ul>
-<p><b>Save Runset</b>, <b>Load Runset</b> i <b>Recent</b> zapisują albo odtwarzają cały formularz. Po <b>Import</b> przeczytaj raport: nieznany model, niewłaściwa liczba terminali lub zła biblioteka wymagają poprawienia mapy.</p>
-
-<h2 id="analysis">3. Analiza expected kontra observed</h2>
-<p>Importer dostarcza expected connectivity i binding instancji, a LVS/adapter PDK dostarcza observed connectivity. Analiza jest wykonywana w osobnym procesie KLayout batch, więc edytor pozostaje responsywny. Wynik trafia do sidecara i Report Database, bez modyfikowania geometrii layoutu.</p>
-<h3>Istniejący layout i schemat Xschem</h3>
-<ol>
- <li>Otwórz zapisany OAS właściwym skryptem PDK; dla projektu pilotażowego XH018: <code>cd ~/eda/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV &amp;&amp; xh018-gds1131 layout/lvsh_diff2HV.oas</code>.</li>
- <li>Sprawdź, że layout nie ma znacznika <code>[+]</code>. Attach/Run celowo odmawia pracy na niezapisanym widoku, aby porównanie nie mieszało dwóch wersji geometrii.</li>
- <li>Kliknij <b>Attach SDL Source...</b> i wskaż <code>lvsh_diff2HV.sch</code>. Możesz też wskazać istniejący <code>.spice</code>, <code>.spi</code>, <code>.cir</code> lub <code>.cdl</code>. Dla <code>.sch</code> profil uruchomi Xschem bez GUI i użyje wygenerowanej netlisty tylko jako expected connectivity.</li>
- <li>Po komunikacie o dołączonym źródle kliknij <b>Run SDL Analysis</b>. Operacja jest read-only względem layoutu: nie regeneruje, nie przesuwa i nie nadpisuje instancji.</li>
-</ol>
-<p>Dla pilota <code>lvsh_diff2HV</code> terminal map wiąże 13 urządzeń fizycznych. Pozostałych 6 urządzeń bez wiarygodnego access-point adapter nie zamienia na fałszywe <b>MISSING</b>; Browser pokazuje je jawnie w żółtym pasku jako <b>SDL source warning</b>.</p>
-<div class="warn"><b>Ważne dla SG13G2:</b> polecenie LVS uruchomione bez source netlisty przechodzi w <code>NET_ONLY</code> i zapisuje jedynie <code>*_extracted.cir</code>. Nie uzupełnia pola <code>snapshot</code> w sidecarze SDL, więc Findings pozostaje puste. Użyj kompletnego polecenia poniżej.</div>
-<p>Zapisz layout (brak znacznika <code>[+]</code> w tytule) i kliknij <b>Run SDL Analysis</b> w Browserze. Przycisk pokazuje stan pracy i po sukcesie automatycznie wczytuje Findings. Odpowiednik terminalowy dla automatyzacji SG13G2 (podmień <code>layout</code> i <code>top</code>):</p>
-<pre>PATH="$HOME/.local/bin:$PATH" iic-ihp klayout -b \
-  -r /foss/designs/.klayout-ihp/salt/NetlistImportPlugin/pymacros/klayout_netlist_importer/sg13g2_sdl_batch.py \
-  -rd layout=/foss/designs/quenching/layout/NAZWA.oas \
-  -rd top=NAZWA</pre>
-<p>Po sukcesie ostatnia linia terminala zaczyna się od <code>SG13G2_SDL_BATCH_OK</code>. Powstaną pliki <code>NAZWA.oas.observed.json</code>, <code>NAZWA.oas.sdl.json</code> z niepustym <code>snapshot</code> oraz <code>NAZWA.oas.sdl.lyrdb</code>.</p>
-<p>Dla XH018 GUI automatycznie wybiera <code>xh018_sdl_batch.py</code> na podstawie technologii <code>TECH_XH018_1131</code> albo profilu <code>.klayout-xh018*</code>. Nie trzeba wybierać adaptera ręcznie.</p>
-<p class="ok">Przed oglądaniem linii sprawdź, że snapshot ma <code>stale=false</code>. Po zmianie layoutu albo netlisty wynik staje się nieaktualny i analizę trzeba powtórzyć.</p>
-
-<h2 id="cas">4. Flight-lines oraz Findings/CAS</h2>
-<ol>
- <li>Otwórz <b>Tools → Connectivity Inspection → Show Connectivity Panel</b>.</li>
- <li>Włącz <b>Show Connectivity Information</b> i <b>Flywires</b>.</li>
- <li>Wybierz tryb <b>Flight-lines</b>: <b>Off</b>, <b>Selected Nets</b>, <b>Selected Pins</b>, <b>Selected Instances</b> albo <b>All Opens</b>.</li>
- <li>Kliknij <b>Open Connectivity Browser</b>. Gdy sidecara brakuje, użyj <b>Attach SDL Source...</b>; gdy snapshot jest pusty albo nieaktualny, zapisz layout i kliknij <b>Run SDL Analysis</b>.</li>
- <li>W zakładce <b>Findings</b> filtruj typy i zaznaczaj jeden lub wiele wpisów. Powiązane markery pozostają jasne, a pozostałe są wygaszane o 65%, bez ukrywania kontekstu layoutu. Odznaczenie wszystkich wpisów przywraca pełną jasność.</li>
- <li>Szerokość każdej kolumny można zmieniać, przeciągając separator w nagłówku. Zamknięcie Connectivity Browser automatycznie usuwa wybór i przywraca pełną jasność overlay.</li>
- <li>W zakładce <b>By Instance</b> kliknij instancję, aby wycentrować i przybliżyć jej bbox. W <b>By Net</b> najpierw wybierz sieć, a następnie instancję w prawej tabeli — widok zostanie wycentrowany w ten sam sposób.</li>
- <li>Dostępne statusy findings to <b>active</b>, <b>visited</b> i <b>waived</b>.</li>
-</ol>
-<p>Flight-lines są rysowane wyłącznie dla rzeczywistych <b>OPEN</b>. Sieć złożona z <code>k</code> rozłącznych komponentów otrzymuje <code>k-1</code> linii MST pomiędzy najbliższymi access points. <b>SHORT</b>, <b>WRONG_NET</b>, <b>UNBOUND</b>, <b>MISSING</b>, <b>MASTER_MISMATCH</b> i <b>PARAMETER_MISMATCH</b> są raportowane w Findings, lecz nie generują linii trasowania.</p>
-
-<h2 id="pdk">5. Profile PDK</h2>
-<ul>
- <li><b>SG13G2 / iic-ihp:</b> pełny przepływ jest dostępny w profilu produkcyjnym.</li>
- <li><b>XH018 / iic-xh018:</b> wspólny GUI rozpoznaje <code>TECH_XH018_1131</code>, korzysta z mapy XH018 i read-only adaptera BasicLVS/NetTracer. Istniejący layout można połączyć ze źródłem bez importowania placementu.</li>
+<li><b>stale</b>: zmienił się layout lub netlista; zapisz layout i uruchom analizę ponownie.</li>
+<li>Pusty Browser: sprawdź, czy import utworzył sidecar i czy layout zawiera instancje z <code>INSTANCE_INFO__*</code>.</li>
+<li>Brak Findings: upewnij się, że analiza zakończyła się poprawnie, a nie tylko oficjalna ekstrakcja NET_ONLY.</li>
 </ul>
 
-<h2 id="diagnostics">6. Diagnostyka</h2>
-<ul>
- <li>Brak wszystkich linii: sprawdź sidecar, <code>stale</code>, opcję <b>Flywires</b> i tryb widoczności.</li>
- <li>Pusty Findings i komunikat <b>snapshot is empty</b>: wykonano tylko attach/import albo LVS <code>NET_ONLY</code>; uruchom <b>Run SDL Analysis</b> z sekcji 3.</li>
- <li>Puste <b>By Net</b> i pusta lista pinów: importer zna mapę logiczną, ale PCell nie udostępnił fizycznych <code>PIN_INFO</code>. Po analizie SDL używane są access points z adaptera; wcześniej nie należy zgadywać położenia terminali.</li>
- <li>Brak linii przy SHORT: to prawidłowe — SHORT jest tylko findingiem.</li>
- <li>Po domknięciu rozwarcia zapisz layout, ponów analizę i kliknij <b>Refresh</b>; odpowiednia linia ma zniknąć.</li>
- <li>Po przesunięciu instancji layout ma stan niezapisany. Ostatni zapisany overlay pozostaje widoczny, ale jest przygaszony i oznaczony jako <b>stale</b>. Zapisz OAS, a następnie użyj <b>Run SDL Analysis</b> obok <b>Refresh</b> w panelu albo analogicznego przycisku w Browserze. Adapter odzyskuje stabilną nazwę przesuniętej instancji ze zgodnego bindingu modelu.</li>
- <li>Brak pinów static cell: sprawdź zachowane etykiety terminali i binding instancji.</li>
- <li>Żółty <b>SDL analysis warning</b> oznacza terminal, dla którego adapter nie znalazł jednoznacznego fizycznego access point. Taki terminal pozostaje widoczny logicznie w <b>By Net</b>/<b>By Instance</b>, ale nie jest używany do fałszywego SHORT ani do markera fizycznego.</li>
-</ul>
-
-<h2 id="self-test">7. Polecenia do samodzielnego testu</h2>
-<p>Menu produkcyjnego IHP:</p>
-<pre>PATH="$HOME/.local/bin:$PATH" iic-ihp klayout</pre>
-<p>Kontrolowany IHP: jeden OPEN, jedna flight-line i otwarty manual (proces kończy się po maksymalnie 45 s):</p>
-<pre>PATH="$HOME/.local/bin:$PATH" \
-IHP_KLAYOUT_HOME=/foss/designs/.klayout-ihp-sdl-dev \
-iic-ihp klayout -e \
--r /foss/designs/.klayout-ihp-sdl-dev/salt/ConnectivityInspectionPlugin/tests/klayout_sdl_gui_smoke.py \
--rd expected_findings=1 -rd expected_lines=1 -rd expected_instances=2 \
--rd show_manual=true -rd hold_seconds=45 \
-/foss/designs/.klayout-ihp-sdl-dev/sdl-tests/results/ihp_sdl_smoke.oas</pre>
-<p>Rzeczywisty projekt XH018 (skrypt ustawia właściwy PDK i profil):</p>
-<pre>cd ~/eda/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV
-xh018-gds1131 layout/lvsh_diff2HV.oas</pre>
-<p>Następnie w KLayout: <b>Attach SDL Source...</b> → wybierz <code>lvsh_diff2HV.sch</code> → <b>Run SDL Analysis</b> → <b>Open Connectivity Browser</b>. Suma kontrolna OAS przed i po analizie musi być identyczna.</p>
-<p>Odpowiednik dwóch przycisków w trybie batch (wymaga najpierw Attach, potem Analysis):</p>
-<pre>iic-xh018 klayout -b \
-  -r /foss/designs/.klayout-xh018/salt/NetlistImportPlugin/pymacros/klayout_netlist_importer/sdl_attach_source.py \
-  -rd layout=/foss/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV/layout/lvsh_diff2HV.oas \
-  -rd input=/foss/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV/layout/lvsh_diff2HV.oas \
-  -rd top=lvsh_diff2HV \
-  -rd source=/foss/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV/xschem/lvsh_diff2HV.sch
-
-iic-xh018 klayout -b \
-  -r /foss/designs/.klayout-xh018/salt/NetlistImportPlugin/pymacros/klayout_netlist_importer/xh018_sdl_batch.py \
-  -rd layout=/foss/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV/layout/lvsh_diff2HV.oas \
-  -rd input=/foss/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV/layout/lvsh_diff2HV.oas \
-  -rd top=lvsh_diff2HV \
-  -rd output=/foss/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV/layout/lvsh_diff2HV.oas.observed.json \
-  -rd sidecar=/foss/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV/layout/lvsh_diff2HV.oas.sdl.json \
-  -rd rdb=/foss/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV/layout/lvsh_diff2HV.oas.sdl.lyrdb</pre>
-</body>
-</html>
+<h2>7. Test bez GUI</h2>
+<pre>cd klayout-connectivity-inspection
+python3 -m pytest -q</pre>
+</body></html>

@@ -50,7 +50,7 @@ if mode == "findings":
     finding_count = page.findings_tw.topLevelItemCount
     assert finding_count >= 1
     # Prefer the third finding when present (the SG13G2 evidence fixture);
-    # otherwise select the final real-project row (XH018 has OPEN and SHORT).
+    # otherwise select the final row to exercise selection emphasis.
     page.findings_tw.clearSelection()
     page.findings_tw.topLevelItem(min(2, finding_count - 1)).setSelected(True)
 elif mode == "by_net":

@@ -35,35 +35,14 @@ class SnapshotPinAccess:
     layer: str
 
 
-@dataclass(frozen=True)
-class SnapshotBrowserPin:
-    pin_id: str
-    name: str
-    net: str
-    bbox: Optional[Tuple[float, float, float, float]] = None
-    point: Optional[Tuple[float, float]] = None
-    layer: str = ""
-
-
-@dataclass(frozen=True)
-class SnapshotBrowserInstance:
-    instance_id: str
-    instance_name: str
-    source_master: str
-    layout_master: str
-    layout_library: str
-    pins: Tuple[SnapshotBrowserPin, ...]
-    placement_bbox: Optional[Tuple[float, float, float, float]] = None
-
-
 def snapshot_state_for_layout(layout_path: str) -> SnapshotState:
     """Explain whether Findings/flight-lines are ready for this layout."""
     sidecar_path = sidecar_path_for_layout(layout_path)
     if not sidecar_path.is_file():
         return SnapshotState(
             "missing",
-            "No SDL sidecar was found. For an existing layout use Attach SDL "
-            "Source (no instance import), then run the PDK SDL analysis.",
+            "No SDL sidecar was found. Import the SG13G2 source netlist first, "
+            "then run SDL Analysis.",
         )
     try:
         document = json.loads(sidecar_path.read_text(encoding="utf-8"))
@@ -166,116 +145,6 @@ def load_pin_access_for_layout(layout_path: str) -> Tuple[SnapshotPinAccess, ...
             point = _point_tuple(raw.get("point"), "pin access point")
             result.setdefault(pin_id, SnapshotPinAccess(pin_id, bbox, point, str(layer)))
     return tuple(result[key] for key in sorted(result))
-
-
-def load_browser_instances_for_layout(
-    layout_path: str,
-) -> Tuple[SnapshotBrowserInstance, ...]:
-    """Load source instances for By Net/By Instance without layout metadata.
-
-    Existing XH018 OAS files predate ``INSTANCE_INFO__*``. Their durable SDL
-    sidecar still contains the source graph and bindings, while a ready
-    snapshot contributes physical pin bboxes. Missing physical geometry never
-    removes logical pin/net rows from the Browser.
-    """
-    path = sidecar_path_for_layout(layout_path)
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
-        raise SnapshotFormatError("Invalid SDL JSON in {}: {}".format(path, error))
-    if not isinstance(document, Mapping):
-        raise SnapshotFormatError("SDL sidecar root must be an object")
-    raw_design = document.get("source_design")
-    if raw_design is None:
-        return ()
-    if not isinstance(raw_design, Mapping):
-        raise SnapshotFormatError("SDL sidecar 'source_design' must be an object")
-    raw_instances = raw_design.get("instances", {})
-    if not isinstance(raw_instances, Mapping):
-        raise SnapshotFormatError("SDL source_design 'instances' must be an object")
-
-    raw_bindings = document.get("bindings", [])
-    if not isinstance(raw_bindings, list):
-        raise SnapshotFormatError("SDL sidecar 'bindings' must be a list")
-    bindings: Dict[str, Mapping[str, Any]] = {}
-    for index, binding in enumerate(raw_bindings):
-        if not isinstance(binding, Mapping):
-            raise SnapshotFormatError("SDL binding #{} must be an object".format(index))
-        source_path = binding.get("source_path")
-        if not isinstance(source_path, str) or not source_path:
-            raise SnapshotFormatError(
-                "SDL binding #{} requires non-empty 'source_path'".format(index)
-            )
-        bindings[source_path] = binding
-
-    access_by_pin: Dict[str, SnapshotPinAccess] = {}
-    raw_snapshot = document.get("snapshot")
-    if isinstance(raw_snapshot, Mapping) and not bool(raw_snapshot.get("stale", False)):
-        raw_observed = raw_snapshot.get("observed", {})
-        if not isinstance(raw_observed, Mapping):
-            raise SnapshotFormatError("SDL sidecar 'observed' must be an object")
-        for component in raw_observed.values():
-            if not isinstance(component, Mapping):
-                raise SnapshotFormatError("SDL observed component must be an object")
-            raw_accesses = component.get("access_points", [])
-            if not isinstance(raw_accesses, list):
-                raise SnapshotFormatError("SDL component 'access_points' must be a list")
-            for raw in raw_accesses:
-                if not isinstance(raw, Mapping):
-                    raise SnapshotFormatError("SDL pin access point must be an object")
-                pin_id = raw.get("pin_id")
-                if not isinstance(pin_id, str) or not pin_id:
-                    raise SnapshotFormatError(
-                        "SDL pin access point requires non-empty 'pin_id'"
-                    )
-                access_by_pin.setdefault(pin_id, SnapshotPinAccess(
-                    pin_id=pin_id,
-                    bbox=_bbox_tuple(raw.get("bbox"), "pin access bbox"),
-                    point=_point_tuple(raw.get("point"), "pin access point"),
-                    layer=str(raw.get("layer", "")),
-                ))
-
-    result = []
-    for instance_id in sorted(raw_instances):
-        raw = raw_instances[instance_id]
-        if not isinstance(instance_id, str) or not isinstance(raw, Mapping):
-            raise SnapshotFormatError("SDL source instance must be a named object")
-        pins = raw.get("pins", {})
-        if not isinstance(pins, Mapping) or any(
-            not isinstance(pin, str) or not isinstance(net, str)
-            for pin, net in pins.items()
-        ):
-            raise SnapshotFormatError(
-                "SDL source instance '{}' pins must map strings to strings".format(instance_id)
-            )
-        binding = bindings.get(instance_id, {})
-        bbox_value = binding.get("placement_bbox")
-        placement_bbox = (
-            _bbox_tuple(bbox_value, "binding placement_bbox")
-            if bbox_value is not None else None
-        )
-        browser_pins = []
-        for pin_name, net_name in sorted(pins.items()):
-            pin_id = instance_id.rstrip("/") + "/" + pin_name.strip("/")
-            access = access_by_pin.get(pin_id)
-            browser_pins.append(SnapshotBrowserPin(
-                pin_id=pin_id,
-                name=pin_name,
-                net=net_name,
-                bbox=access.bbox if access else None,
-                point=access.point if access else None,
-                layer=access.layer if access else "",
-            ))
-        result.append(SnapshotBrowserInstance(
-            instance_id=instance_id,
-            instance_name=instance_id.rstrip("/").rsplit("/", 1)[-1],
-            source_master=str(raw.get("master", "")),
-            layout_master=str(binding.get("layout_master", raw.get("master", ""))),
-            layout_library=str(binding.get("layout_library", "")),
-            pins=tuple(browser_pins),
-            placement_bbox=placement_bbox,
-        ))
-    return tuple(result)
 
 
 def _point_tuple(value: Any, label: str) -> Tuple[float, float]:

@@ -3,10 +3,10 @@
  <name>IICSDLConnectivityInspectionPlugin</name>
  <token/>
  <hidden>false</hidden>
- <version>0.4</version>
+ <version>0.5</version>
  <api-version/>
  <title>IIC SDL Connectivity Inspection</title>
- <doc>CAS findings, cross-probing and real OPEN flight-lines for IIC SG13G2 and XH018 SDL workflows</doc>
+ <doc>CAS findings, cross-probing and real OPEN flight-lines for the open-source IHP SG13G2 SDL workflow</doc>
  <doc-url>https://github.com/mwolodzk/klayout-connectivity-inspection</doc-url>
  <url/>
  <license>GPLv3</license>
@@ -20,7 +20,7 @@
  <depends>
   <name>IICSDLNetlistImportPlugin</name>
   <url/>
-  <version>0.14</version>
+  <version>0.15</version>
  </depends>
  <authored-time/>
  <installed-time></installed-time>

@@ -196,22 +196,6 @@
           <item>
            <layout class="QVBoxLayout" name="analysisActionsLayout">
             <item>
-             <widget class="QPushButton" name="attach_sdl_source_pb">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="toolTip">
-               <string>Select an Xschem schematic or SPICE/CDL netlist without importing or regenerating layout instances</string>
-              </property>
-              <property name="text">
-               <string>Attach SDL Source...</string>
-              </property>
-             </widget>
-            </item>
-            <item>
              <layout class="QHBoxLayout" name="horizontalLayout">
               <item>
                <spacer name="horizontalSpacer">

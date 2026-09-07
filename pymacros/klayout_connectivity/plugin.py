@@ -29,17 +29,9 @@ import pya
 from klayout_plugin_utils.debugging import debug, Debugging
 from klayout_plugin_utils.event_loop import EventLoop
 from klayout_plugin_utils.layout_connectivity_info import (
-    CellConnectivityInfo,
-    CellInstanceConnectivityInfo,
-    Context,
     LayoutConnectivityInfo,
     PinInfo,
-    PROPERTY_KEY__INSTANCE_INFO__CELL_NAME,
     PROPERTY_KEY__INSTANCE_INFO__HIERARCHY_PATH,
-    PROPERTY_KEY__INSTANCE_INFO__INSTANCE_NAME,
-    PROPERTY_KEY__INSTANCE_INFO__LIB_NAME,
-    PROPERTY_KEY__INSTANCE_INFO__LOCAL_NET_MAP,
-    PROPERTY_KEY__INSTANCE_INFO__VERSION,
 )
 from klayout_plugin_utils.qt_helpers import qmessagebox_critical
 
@@ -57,7 +49,6 @@ from klayout_connectivity.options import ConnectivityOptions, CONFIG_KEY__CONNEC
 from klayout_connectivity.sdl_snapshot import (
     SnapshotFormatError,
     SnapshotState,
-    load_browser_instances_for_layout,
     load_findings_for_layout,
     load_flight_lines_for_layout,
     load_pin_access_for_layout,
@@ -65,10 +56,8 @@ from klayout_connectivity.sdl_snapshot import (
 )
 from klayout_connectivity.sdl_analysis_launcher import (
     adapter_for_technology,
-    build_attach_source_command,
     build_sdl_command,
     find_batch_script,
-    find_source_attach_script,
 )
 from klayout_connectivity.user_manual import SDLUserManualDialog
 
@@ -76,29 +65,15 @@ from klayout_connectivity.user_manual import SDLUserManualDialog
 
 path_containing_this_script = os.path.realpath(os.path.dirname(__file__))
 
-_INSTANCE_INFO_KEYS = (
-    PROPERTY_KEY__INSTANCE_INFO__VERSION,
-    PROPERTY_KEY__INSTANCE_INFO__LIB_NAME,
-    PROPERTY_KEY__INSTANCE_INFO__CELL_NAME,
-    PROPERTY_KEY__INSTANCE_INFO__INSTANCE_NAME,
-    PROPERTY_KEY__INSTANCE_INFO__HIERARCHY_PATH,
-    PROPERTY_KEY__INSTANCE_INFO__LOCAL_NET_MAP,
-)
-
-#--------------------------------------------------------------------------------
-
-
 class ConnectivitySetupDock(pya.QDockWidget):
     def __init__(self, 
                  refresh_callback: Callable,
                  open_connectivity_browser_callback: Callable,
-                 attach_source_callback: Callable,
                  run_analysis_callback: Callable,
                  hide_callback: Callable):
         super().__init__()
         self.setupWidget = ConnectivitySetupWidget(refresh_callback, 
                                                    open_connectivity_browser_callback,
-                                                   attach_source_callback,
                                                    run_analysis_callback,
                                                    hide_callback)
         self.setWidget(self.setupWidget)
@@ -117,15 +92,10 @@ class ConnectivitySetupDock(pya.QDockWidget):
     def set_analysis_running(self, running: bool):
         self.setupWidget.set_analysis_running(running)
 
-    def set_source_attaching(self, running: bool):
-        self.setupWidget.set_source_attaching(running)
-        
-        
 class ConnectivitySetupWidget(pya.QWidget):
     def __init__(self, 
                  refresh_callback: Callable,
                  open_connectivity_browser_callback: Callable, 
-                 attach_source_callback: Callable,
                  run_analysis_callback: Callable,
                  hide_callback: Callable):
         super().__init__()
@@ -148,7 +118,6 @@ class ConnectivitySetupWidget(pya.QWidget):
 
         self.page.open_connectivity_browser_pb.clicked(open_connectivity_browser_callback)
         self.page.refresh_pb.clicked(refresh_callback)
-        self.page.attach_sdl_source_pb.clicked(attach_source_callback)
         self.page.run_sdl_analysis_pb.clicked(run_analysis_callback)
 
         for cbx in (
@@ -162,16 +131,8 @@ class ConnectivitySetupWidget(pya.QWidget):
 
     def set_analysis_running(self, running: bool):
         self.page.run_sdl_analysis_pb.setEnabled(not running)
-        self.page.attach_sdl_source_pb.setEnabled(not running)
         self.page.run_sdl_analysis_pb.setText(
             "SDL Analysis is running..." if running else "Run SDL Analysis"
-        )
-
-    def set_source_attaching(self, running: bool):
-        self.page.attach_sdl_source_pb.setEnabled(not running)
-        self.page.run_sdl_analysis_pb.setEnabled(not running)
-        self.page.attach_sdl_source_pb.setText(
-            "Attaching SDL Source..." if running else "Attach SDL Source..."
         )
          
     def update_ui_from_config(self, config: ConnectivityOptions):
@@ -229,11 +190,6 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self.sdl_analysis_log = None
         self.sdl_analysis_log_path = None
         self.sdl_analysis_target_path = None
-        self.sdl_source_process = None
-        self.sdl_source_timer = None
-        self.sdl_source_log = None
-        self.sdl_source_log_path = None
-        self.sdl_source_target_path = None
         self.active_finding_selection = None
         self.rendered_flight_lines = ()
         self.last_focused_instance_id = None
@@ -327,18 +283,10 @@ class ConnectivityPluginFactory(pya.PluginFactory):
         self._menu_action_open_connectivity_browser = action
 
         action = pya.Action()
-        action.title = "Attach SDL Source..."
-        action.on_triggered += lambda: self.attach_sdl_source()
-        menu.insert_item(
-            "tools_menu.connectivity_menu.#3", "attach_sdl_source", action
-        )
-        self._menu_action_attach_sdl_source = action
-
-        action = pya.Action()
         action.title = "Run SDL Analysis..."
         action.on_triggered += lambda: self.run_sdl_analysis()
         menu.insert_item(
-            "tools_menu.connectivity_menu.#4", "run_sg13g2_sdl_analysis", action
+            "tools_menu.connectivity_menu.#3", "run_sg13g2_sdl_analysis", action
         )
         self._menu_action_run_sdl_analysis = action
 
@@ -474,7 +422,6 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                 self.setupDock = ConnectivitySetupDock(
                     self.refresh_connectivity_info,
                     self.open_connectivity_browser,
-                    self.attach_sdl_source,
                     self.run_sdl_analysis,
                     self.hide_connectivity_panel,
                 )
@@ -514,7 +461,6 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                     refresh_callback=self.refresh_connectivity_info,
                     findings_selection_callback=self._apply_findings_selection,
                     analysis_callback=self.run_sdl_analysis,
-                    source_callback=self.attach_sdl_source,
                     instance_selection_callback=self._focus_instance_info,
                 )
             
@@ -573,133 +519,12 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             return None
         return cv, layout_filename
 
-    def attach_sdl_source(self):
-        """Attach .sch/SPICE expected connectivity without importing instances."""
-        target = self._saved_analysis_target("Attach SDL Source")
-        if target is None:
-            return
-        cv, layout_filename = target
-        if self.sdl_analysis_process is not None and self.sdl_analysis_process.poll() is None:
-            return
-        if self.sdl_source_process is not None and self.sdl_source_process.poll() is None:
-            return
-        adapter = self._analysis_adapter()
-        if adapter != "xh018":
-            qmessagebox_critical(
-                "Source attachment unavailable",
-                "Attach SDL Source was not started",
-                "Read-only source attachment for an existing layout is currently "
-                "available for XH018 terminal-map projects. For SG13G2, use the "
-                "SDL sidecar created by Netlist Import.",
-            )
-            return
-        source = pya.QFileDialog.getOpenFileName(
-            pya.MainWindow.instance(),
-            "Attach SDL Source (layout remains read-only)",
-            os.path.dirname(layout_filename),
-            "Xschem / SPICE (*.sch *.spice *.spi *.cir *.cdl);;All Files (*)",
-        )
-        if isinstance(source, (tuple, list)):
-            source = source[0] if source else ""
-        if not source:
-            return
-        source = str(source)
-        if not os.path.isfile(source):
-            qmessagebox_critical(
-                "Invalid source", "Attach SDL Source failed",
-                "The selected schematic or netlist does not exist: " + source,
-            )
-            return
-        script = find_source_attach_script()
-        if script is None:
-            qmessagebox_critical(
-                "Missing source adapter", "Attach SDL Source failed",
-                "The Netlist Import SDL source-attachment batch script was not "
-                "found in this KLayout profile.",
-            )
-            return
-        try:
-            command = build_attach_source_command(
-                script, layout_filename, str(cv.cell.name), source
-            )
-            self.sdl_source_log_path = layout_filename + ".sdl-attach.log"
-            self.sdl_source_log = open(
-                self.sdl_source_log_path, "w", encoding="utf-8"
-            )
-            self.sdl_source_process = subprocess.Popen(
-                command, stdout=self.sdl_source_log, stderr=subprocess.STDOUT,
-                close_fds=True,
-            )
-            self.sdl_source_target_path = layout_filename
-        except Exception as error:
-            if self.sdl_source_log is not None:
-                self.sdl_source_log.close()
-                self.sdl_source_log = None
-            self.sdl_source_target_path = None
-            qmessagebox_critical("Error", "Attach SDL Source failed", str(error))
-            return
-        if self.connectivity_browser_dialog is None:
-            self.open_connectivity_browser()
-        if self.connectivity_browser_dialog is not None:
-            self.connectivity_browser_dialog.set_source_attaching(True)
-            self.connectivity_browser_dialog.update_snapshot_status(
-                "analyzing",
-                "Attaching expected connectivity in a separate read-only batch "
-                "process. No layout cells, instances or geometry will be changed.",
-            )
-        if self.setupDock is not None:
-            self.setupDock.set_source_attaching(True)
-        self.sdl_source_timer = pya.QTimer(
-            pya.Application.instance().main_window()
-        )
-        self.sdl_source_timer.timeout.connect(self._poll_sdl_source_attach)
-        self.sdl_source_timer.start(250)
-
-    def _poll_sdl_source_attach(self):
-        process = self.sdl_source_process
-        if process is None or process.poll() is None:
-            return
-        exit_code = process.returncode
-        if self.sdl_source_timer is not None:
-            self.sdl_source_timer.stop()
-            self.sdl_source_timer = None
-        if self.sdl_source_log is not None:
-            self.sdl_source_log.close()
-            self.sdl_source_log = None
-        self.sdl_source_process = None
-        completed_target = self.sdl_source_target_path
-        self.sdl_source_target_path = None
-        if self.connectivity_browser_dialog is not None:
-            self.connectivity_browser_dialog.set_source_attaching(False)
-        if self.setupDock is not None:
-            self.setupDock.set_source_attaching(False)
-        if exit_code == 0:
-            if completed_target == self._layout_filename():
-                self.refresh_connectivity_info()
-                print("SDL source attached read-only; browser refreshed")
-            else:
-                print(
-                    "SDL source attached read-only for {}; active layout changed, "
-                    "so its browser was not refreshed".format(completed_target)
-                )
-            return
-        message = "Source attachment for {} exited with code {}. See {}".format(
-            completed_target, exit_code, self.sdl_source_log_path
-        )
-        if completed_target == self._layout_filename():
-            self.sdl_snapshot_state = ("error", message)
-            if self.connectivity_browser_dialog is not None:
-                self.connectivity_browser_dialog.update_snapshot_status(*self.sdl_snapshot_state)
-        qmessagebox_critical("Error", "Attach SDL Source failed", message)
-
     def run_sdl_analysis(self):
         """Start technology-specific extraction/comparison in read-only batch."""
         target = self._saved_analysis_target("SDL Analysis")
         if target is None:
             return
         cv, layout_filename = target
-        if self.sdl_source_process is not None and self.sdl_source_process.poll() is None:
-            return
         if self.sdl_analysis_process is not None and self.sdl_analysis_process.poll() is None:
             if self.connectivity_browser_dialog is not None:
                 self.connectivity_browser_dialog.raise_()
@@ -713,15 +538,6 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                     self._technology_name() or "<unknown>",
                     os.environ.get("KLAYOUT_HOME", "<unknown>"),
                 ),
-            )
-            return
-        if adapter == "xh018" and not os.path.isfile(layout_filename + ".sdl.json"):
-            qmessagebox_critical(
-                "Expected connectivity required",
-                "SDL Analysis was not started",
-                "No SDL sidecar is attached to this XH018 layout. Click Attach "
-                "SDL Source first and select the existing .sch or SPICE/CDL "
-                "netlist. Attachment and analysis are read-only for the OAS file.",
             )
             return
         script = find_batch_script(adapter=adapter)
@@ -1049,118 +865,17 @@ class ConnectivityPluginFactory(pya.PluginFactory):
             qmessagebox_critical('Error', 'Connectivity Inspection failed', 'No layout open to analyze')
             return
         
-        has_pcell, has_static_info = self._layout_instance_kinds()
-        if has_pcell:
-            self.conn_info = LayoutConnectivityInfo.for_layout_view(self.view)
-        else:
-            # KLayoutPluginUtils expands every occurrence while looking for
-            # PCells.  Streamed project layouts can contain hundreds of
-            # thousands of repeated static occurrences, so prove there are no
-            # PCell definitions first and avoid freezing the editor.
-            top_cell = self.cell_view.cell
-            self.conn_info = LayoutConnectivityInfo(cell_infos=[
-                CellConnectivityInfo(cell=top_cell, cell_name=top_cell.name)
-            ])
-        if has_static_info:
-            self._include_static_cell_connectivity_info(self.conn_info)
+        self.conn_info = LayoutConnectivityInfo.for_layout_view(self.view)
 
         # Load the public snapshot before painting.  This also resets the
         # cached lines when a previously reported OPEN was fixed.
         self._load_layout_sidecar_findings()
         self._include_snapshot_pin_infos(self.conn_info)
-        self._include_sidecar_connectivity_info(self.conn_info)
         
         self.update_markers()
         
         if self.connectivity_browser_dialog is not None and self.connectivity_browser_dialog.isVisible():
             self.connectivity_browser_dialog.update_from_conn_info(self.conn_info)
-
-    def _layout_instance_kinds(self) -> Tuple[bool, bool]:
-        """Inspect hierarchy definitions once, without expanding occurrences."""
-        has_pcell = False
-        has_static_info = False
-        if self.layout is None:
-            return has_pcell, has_static_info
-        for cell in self.layout.each_cell():
-            for inst in cell.each_inst():
-                if inst.is_pcell():
-                    has_pcell = True
-                elif any(inst.property(key) is not None for key in _INSTANCE_INFO_KEYS):
-                    has_static_info = True
-                if has_pcell and has_static_info:
-                    return has_pcell, has_static_info
-        return has_pcell, has_static_info
-
-    def _include_static_cell_connectivity_info(self, conn_info: LayoutConnectivityInfo):
-        """Add imported/static instances carrying INSTANCE_INFO__* metadata.
-
-        KLayoutPluginUtils currently collects only ``inst.is_pcell()``.  Its
-        ``CellInstanceConnectivityInfo.for_instance`` parser itself works for
-        both PCells and ordinary cells, so append only the latter here and
-        preserve the existing PCell records unchanged.
-        """
-        if not conn_info.cell_infos or self.view is None or self.cell_view is None:
-            return
-        top_cell = self.cell_view.cell
-        if top_cell is None:
-            return
-        target = conn_info.cell_infos[0].pcell_infos
-        ctx = Context(layout_view=self.view)
-        iterator = top_cell.begin_instances_rec()
-        while not iterator.at_end():
-            inst = iterator.current_inst_element().inst()
-            hidden = self.view.is_cell_hidden(inst.cell.cell_index(), self.view.active_cellview_index)
-            static_has_instance_info = any(
-                inst.property(key) is not None for key in _INSTANCE_INFO_KEYS
-            )
-            if not hidden and not inst.is_pcell() and static_has_instance_info:
-                info = CellInstanceConnectivityInfo.for_instance(inst, iterator.inst_trans(), ctx)
-                if info is not None:
-                    self._include_static_label_pin_infos(
-                        info, inst, iterator.inst_trans()
-                    )
-                    target.append(info)
-            iterator.next()
-
-    def _include_static_label_pin_infos(self, info, inst, outer_trans):
-        """Expose preserved static-cell terminal labels as inspector pins.
-
-        Static XH018 cells have no PCell ``PIN_INFO`` polygons, but their GDS
-        contains terminal text.  Match only labels named in the importer's
-        local pin map and transform them to top coordinates.  This keeps the
-        inspector technology-neutral and avoids inventing unnamed pins.
-        """
-        if info.pin_infos or not info.local_net_map or self.layout is None:
-            return
-        wanted = {str(name).casefold(): str(name) for name in info.local_net_map}
-        iterator = pya.RecursiveShapeIterator(
-            self.layout, inst.cell, self.layout.layer_indexes()
-        )
-        while not iterator.at_end():
-            shape = iterator.shape()
-            if shape.is_text():
-                label = shape.text.string.strip()
-                pin_name = wanted.get(label.casefold())
-                if pin_name is not None:
-                    full_trans = outer_trans * iterator.itrans()
-                    bbox = shape.bbox().transformed(full_trans).to_dtype(
-                        self.layout.dbu
-                    )
-                    if bbox.empty():
-                        position = (full_trans * shape.text.trans).disp.to_dtype(
-                            self.layout.dbu
-                        )
-                        bbox = pya.DBox(
-                            position.x - 0.05, position.y - 0.05,
-                            position.x + 0.05, position.y + 0.05,
-                        )
-                    info.pin_infos.append(PinInfo(
-                        name=pin_name,
-                        term_name=pin_name,
-                        bbox=bbox,
-                        layers=[self.layout.get_info(iterator.layer())],
-                    ))
-            iterator.next()
 
     def _layout_filename(self) -> Optional[str]:
         """Read a CellView filename across KLayout binding versions."""
@@ -1282,92 +997,6 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                     ))
                     known.add(pin_name)
 
-    def _include_sidecar_connectivity_info(
-        self, conn_info: LayoutConnectivityInfo
-    ) -> None:
-        """Merge source graph rows into the Browser without touching layout.
-
-        Frozen XH018 streams commonly have neither PCells nor importer-owned
-        ``INSTANCE_INFO__*`` properties.  The SDL sidecar is the source of
-        truth for their logical instance/pin/net graph.  Physical access
-        points and placement boxes are presentation hints only.
-        """
-        if not conn_info.cell_infos:
-            return
-        layout_filename = self._layout_filename()
-        if not layout_filename:
-            return
-        try:
-            records = load_browser_instances_for_layout(layout_filename)
-        except FileNotFoundError:
-            return
-        except SnapshotFormatError as error:
-            print("Connectivity SDL browser graph ignored: {}".format(error))
-            return
-
-        target = conn_info.cell_infos[0].pcell_infos
-        existing: Dict[str, CellInstanceConnectivityInfo] = {}
-        for info in target:
-            identifier = self._normalized_target_identifier(
-                info.hierarchy_path or info.inst_name
-            )
-            if identifier:
-                existing.setdefault(identifier, info)
-
-        for record in records:
-            identifier = self._normalized_target_identifier(record.instance_id)
-            info = existing.get(identifier)
-            if info is None:
-                info = CellInstanceConnectivityInfo(
-                    inst=None,
-                    inst_name=record.instance_name,
-                    cell_name=record.layout_master or record.source_master,
-                    lib_name=record.layout_library or None,
-                    hierarchy_path=record.instance_id.replace("/", "."),
-                    netlist_cell_name=record.source_master or None,
-                    netlist_lib_name=None,
-                    local_net_map={pin.name: pin.net for pin in record.pins},
-                    global_net_map={pin.name: pin.net for pin in record.pins},
-                )
-                target.append(info)
-                existing[identifier] = info
-            else:
-                # Sidecar net names are authoritative expected connectivity;
-                # preserve any richer layout/PCell identity and geometry.
-                info.local_net_map.update(
-                    {pin.name: pin.net for pin in record.pins}
-                )
-                info.global_net_map.update(
-                    {pin.name: pin.net for pin in record.pins}
-                )
-
-            if record.placement_bbox is not None:
-                info.sdl_placement_bbox = pya.DBox(*record.placement_bbox)
-
-            known = {str(pin.name) for pin in info.pin_infos}
-            for record_pin in record.pins:
-                if record_pin.name in known:
-                    continue
-                has_geometry = record_pin.bbox is not None
-                bbox = (
-                    pya.DBox(*record_pin.bbox)
-                    if has_geometry else pya.DBox()
-                )
-                if has_geometry and bbox.empty() and record_pin.point is not None:
-                    x, y = record_pin.point
-                    radius = 0.02
-                    bbox = pya.DBox(
-                        x - radius, y - radius, x + radius, y + radius
-                    )
-                pin = PinInfo(
-                    name=record_pin.name,
-                    term_name=record_pin.name,
-                    bbox=bbox,
-                    layers=[],
-                )
-                info.pin_infos.append(pin)
-                known.add(record_pin.name)
-
     def _zoom_to_finding_bbox(self, bbox: BoundingBox):
         """Zoom the current view to the union box supplied by FindingsModel."""
         if self.view is None:
@@ -1453,10 +1082,9 @@ class ConnectivityPluginFactory(pya.PluginFactory):
                 for cell_info in self.conn_info.cell_infos:
                     matching = []
                     for info in cell_info.pcell_infos:
-                        # Sidecar-only records intentionally have no live
-                        # pya.Instance handle.  KLayout raises instead of
-                        # returning False when a real Instance is compared
-                        # with that null direct-reference value.
+                        # A connectivity record may lack a live pya.Instance
+                        # handle. KLayout raises instead of returning False
+                        # when a real Instance is compared with that value.
                         info_inst = getattr(info, "inst", None)
                         if info_inst is None or not info.hierarchy_path:
                             continue

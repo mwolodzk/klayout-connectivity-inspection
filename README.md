@@ -1,179 +1,84 @@
-# KLayout Plugin: Visualize Connectivity Information
+# IIC SDL Connectivity Inspection
 
-> **IIC SDL fork.** This repository is a fork of Martin Jan Köhler's
-> [`iic-jku/klayout-connectivity-inspection`](https://github.com/iic-jku/klayout-connectivity-inspection).
-> The original plugin, its history, copyright and GPLv3 license are preserved.
-> The IIC SDL integration package in this fork was implemented by OpenAI Codex
-> in the user-requested `gpt-5.6-sol` / `high reasoning` configuration for
-> Michał Wołodźko. It does not claim authorship of the upstream plugin.
+KLayout Connectivity Browser, CAS findings and OPEN-only flight-lines for the
+open-source IHP SG13G2 flow. This maintained branch intentionally supports only
+IHP SG13G2.
 
-<!--
-[![Watch the demo](doc/screenshot-demo-video.gif)](https://youtube.com/watch/v=TODO)
--->
+The project is a focused fork of Martin Jan Köhler's
+[ConnectivityInspectionPlugin](https://github.com/martinjankoehler/ConnectivityInspectionPlugin).
+Its expected-connectivity input is produced by the companion
+[IIC SDL Netlist Import](https://github.com/mwolodzk/klayout-netlist-import)
+package. The upstream projects remain the source of the original plugin idea
+and reusable KLayout utilities.
 
-* Navigate PCell instances
-* Learn about terminals / pins
-* Draw ratsnest / flywire for
+## What it provides
 
-The SDL v1 extension also loads `<layout>.sdl.json`, adds a Findings tab with
-filtering, multi-select, status changes, zoom/highlight/cross-probing, and
-renders deterministic flight-lines for `OPEN` findings only. Visibility can
-be limited to selected nets, pins or instances. Static imported cells with
-`INSTANCE_INFO__*` metadata and preserved terminal labels are included beside
-PCells. Layouts without PCells or importer metadata take a non-expanding fast
-path so large streamed hierarchies do not freeze the editor.
+- `By Net`, `By Instance`, and filterable `Findings` tabs;
+- `OPEN`, `SHORT`, `WRONG_NET`, binding and parameter diagnostics;
+- flight-lines only between disconnected physical components of one expected
+  net, using an MST with `k-1` lines for `k` components;
+- marker emphasis, multi-selection, zoom, highlight and cross-probing;
+- stale-result detection when layout or source changes;
+- read-only SG13G2 analysis: geometry is read from the saved OAS/GDS and never
+  written by the analyzer.
 
-Selecting Findings keeps related flight-lines bright and dims unrelated
-overlay markers by 65%. Selecting an instance in either *By Instance* or the
-detail table of *By Net* centers and zooms the layout view to that instance.
+## Installation
 
-![Selected OPEN finding with unrelated markers dimmed](docs/screenshots/sdl-findings-selection-emphasis.png)
+Install these Salt.Mine dependencies in the IHP KLayout profile:
 
-![By Net instance selection centered in the layout](docs/screenshots/sdl-by-net-instance-focus.png)
+1. `KLayoutPluginUtils` 0.28 or newer;
+2. `IICSDLNetlistImportPlugin` 0.15 or newer;
+3. `IICSDLConnectivityInspectionPlugin` 0.5.
 
-The complete Polish workflow is available inside KLayout under *Tools* →
-*Connectivity Inspection* → *SDL / CAS User Manual...*. It covers every
-import field, batch analysis, flight-line modes and the Findings/CAS browser.
+Restart KLayout. The panel and commands appear under
+`Tools → Connectivity Inspection`.
 
-For SG13G2 and XH018, save the OAS layout and choose *Tools* → *Connectivity
-Inspection* → *Run SDL Analysis...*, or use the equivalent button in the
-panel or Browser. The active technology/profile selects the PDK adapter.
-Extraction and comparison run in a separate read-only KLayout process; the
-Browser refreshes automatically when it finishes. An unsaved layout is
-rejected so the displayed result cannot refer to older on-disk geometry. The
-batch log is written as `<layout>.sdl.log`.
+## IHP SG13G2 workflow
 
-An existing or frozen XH018 layout does not need to pass through Netlist
-Import. Choose *Attach SDL Source...* and select an Xschem `.sch` file or a
-SPICE/CDL netlist. The companion importer package generates a working SPICE
-netlist for `.sch`, matches source devices to existing instances, and writes
-only SDL sidecars. It never creates, moves, regenerates or writes layout
-cells. SG13G2 currently uses the sidecar created by Netlist Import.
+1. Start KLayout with `iic-ihp klayout -e` and open or create the target layout.
+2. Use `File → Import → Netlist` to select the SPICE/CDL source.
+3. Choose the matching IHP device mappings, validate node order, and import.
+4. Save the layout. Import writes `<layout>.sdl.json` beside it.
+5. Click `Run SDL Analysis` in the Connectivity Inspection panel. The batch
+   adapter reads the saved layout and writes diagnostic sidecars only.
+6. Open `Connectivity Browser`, inspect `Findings`, and select entries to zoom
+   and emphasize the corresponding markers.
+7. Use `All Opens` to display only real missing connections. Fix and save the
+   routing, then run the analysis again; resolved flight-lines disappear.
 
-XH018 example:
+For an existing SG13G2 layout, import into a reviewed working copy if bindings
+are absent. Netlist Import creates expected connectivity and instance metadata;
+the analyzer itself is read-only but cannot infer a missing source binding.
 
-```sh
-cd ~/eda/designs/projects/ECAUSIS/ic/dev/lvsh_diff2HV
-xh018-gds1131 layout/lvsh_diff2HV.oas
+## Screenshots
+
+The retained screenshots illustrate the Connectivity Browser and marker UI.
+They are binary evidence assets and are not package configuration or runtime
+inputs.
+
+![Connectivity layout view](docs/screenshots/connectivity-example-layout.png)
+
+![Connectivity by net](docs/screenshots/connectivity-example-by-net.png)
+
+![Connectivity findings](docs/screenshots/connectivity-example-findings.png)
+
+## Tests
+
+Run the non-GUI suite from the repository root:
+
+```bash
+python3 -m pytest -q
 ```
 
-Then use *Attach SDL Source...* → select the project schematic → *Run SDL
-Analysis* → *Open Connectivity Browser*. The OAS checksum remains unchanged;
-only `.sdl.json`, `.sdl.lyrdb`, observed-data files and logs are updated.
+The package manual is available at
+`Tools → Connectivity Inspection → SDL / CAS User Manual...`.
 
-The following screenshots come from the `xh018-gds1131` pilot run on the
-frozen `lvsh_diff2HV.oas` layout. The Browser loaded 15 expected nets. The
-final bounded adapter covers 13 MOS and four `rnp1h` resistors and reports one
-verified `OPEN` on `cascodeN` plus one physical `GND`--`cascodeN` `SHORT`.
+## Authorship and validation
 
-![XH018 lvsh_diff2HV layout with the SDL controls](docs/screenshots/xh018-lvsh-diff2hv-layout.png)
+The SDL/CAS fork was implemented by OpenAI Codex, model `gpt-5.6-sol`, with
+high reasoning effort, under Michał Wołodźko's direction. The implementation
+was visually checked in KLayout during development, and Michał Wołodźko also
+verified the pilot behavior. The current IHP-only release is additionally
+validated by non-GUI tests and clean package scans.
 
-![XH018 expected nets loaded from the existing Xschem schematic](docs/screenshots/xh018-lvsh-diff2hv-by-net.png)
-
-![XH018 CAS findings for the split cascodeN net and physical short](docs/screenshots/xh018-lvsh-diff2hv-findings.png)
-   
-This add-on can be installed through [KLayout](https://klayout.de) package manager, [see installation instructions here](#installation-instructions)
-
-## Usage
-
-### Tool activation and deactivation
-
-Open *Tools → Connectivity Inspection → Show Panel*. Use *Show Connectivity
-Information* to enable instance/pin overlays and *Flywires* to enable
-flight-lines. The selector limits flight-lines to all opens or the current
-net, pin or instance selection. Clearing either checkbox removes the related
-overlay without changing the layout. *Refresh* reloads the current sidecar;
-*Run SDL Analysis* starts the PDK-specific read-only batch comparison.
-
-## Installation using KLayout Package Manager
-
-<a id="installation-instructions"></a>
-
-> **Replacement fork:** `IICSDLConnectivityInspectionPlugin` uses the same
-> Python module and menu entry as the upstream `ConnectivityInspectionPlugin`.
-> Disable or uninstall the upstream package in a profile before enabling this
-> fork; do not run both copies together. The existing `iic-ihp` and
-> `iic-xh018` integrations already contain this fork's code and do not need a
-> second Salt install.
-
-1. From the main menu, click *Tools*→*Manage Packages* to open the package manager
-2. Locate `IIC SDL Connectivity Inspection`, double-click it to select for installation, then click *Apply*
-3. Review and close the package installation report
-4. Confirm macro execution
-
-The Salt.Mine release is named `IICSDLConnectivityInspectionPlugin` and depends
-on the companion `IICSDLNetlistImportPlugin` fork, so the expected-connectivity
-import and CAS inspection path are installed together.
-
-## Verification record
-
-- OpenAI Codex ran the automated Python suites, KLayout 0.30.6 batch tests and
-  visual GUI checks of the incomplete-import warning, Findings multi-select,
-  pin/net population, the non-blocking analysis launcher and `OPEN`
-  flight-lines on the real SG13G2 Active-quenching pilot layout. It also ran
-  the XH018 attach/extract/compare flow through `xh018-gds1131` on the real
-  ECAUSIS `lvsh_diff2HV` layout and verified graphically that the Browser loads
-  expected nets and cross-probes its connectivity findings. The final batch
-  result contains one `cascodeN` open and one physical `GND`--`cascodeN` short.
-- Michał Wołodźko independently exercised the workflow on pilot project
-  examples and reported the importer-parameter and empty-browser failures that
-  this release diagnoses and fixes.
-
-The companion fork is
-[`mwolodzk/klayout-netlist-import`](https://github.com/mwolodzk/klayout-netlist-import).
-
-## Technical Details about Connectivity Information
-
-Normally, a layout file (e.g. GDS) does not know about devices / terminals / pins, etc.
-
-To obtain the connectivity
-- start from a given netlist: netlist import tool stores the connectivity information
-   - our plugin [klayout-netlist-importer plugin](https://github.com/iic-jku/klayout-netlist-import) does this
-- given a layout, a LVS script is used to obtain the connectivity information
-- PDK PCells mark their pin polygons (device terminal names)
-
-To store this information, we use the KLayout properties system.
-Properties are keyed by integer, so we propose a table of dedicated well-known properties:
-
-### PCells Pin Information Properties 
-
-Pin polygons (e.g. device terminals) on the `pin` purpose layers will store information about the pins. 
-
-| Property Key                              | Property Value Type | Purpose                         | Example        | Comment                         |
-|-------------------------------------------|---------------------|---------------------------------|----------------|---------------------------------|
-| `PIN_INFO__VERSION`                       | String              | Version of Pin Info Record      | `'0.1'`        | for compatibility (migrations)  |
-| `PIN_INFO__LIB_NAME`                      | String              | Library Name                    | `'SG13_dev'`   |                                 |
-| `PIN_INFO__CELL_NAME`                     | String              | Cell Name                       | `'ntap1'`      |                                 |
-| `PIN_INFO__PIN_NAME`                      | String              | Cell Name                       | `'TIE'`        |                                 |
-| `PIN_INFO__TERM_NAME`                     | String              | Cell Name                       | `'TIE'`        |                                 |
-
-
-### Instance Information Properties
-
-#### Example 1: Internal Static Cells
-
-The `NetlistImportPlugin` stores the instance information properties on all instance objects.
-
-| Property Key                              | Property Value Type | Purpose                         | Example           | Comment                         |
-|-------------------------------------------|---------------------|---------------------------------|-------------------|---------------------------------|
-| `INSTANCE_INFO__VERSION`                  | String              | Version of Instance Info Record | `'1'`             | for compatibility (migrations)  |
-| `INSTANCE_INFO__LIB_NAME`                 | String              | Library Name                    | `''`              | empty for internal static cells |
-| `INSTANCE_INFO__CELL_NAME`                | String              | Cell Name                       | `'inverter'`      |                                 |
-| `INSTANCE_INFO__INSTANCE_NAME`            | String              | Instance Name                   | `'x1'`            |                                 |
-| `INSTANCE_INFO__HIERARCHY_PATH`           | String              | Instance FQN                    | `'TOP.x1'`        |                                 |
-| `INSTANCE_INFO__ORIGINAL_INSTANCE_PARAMS` | String              | Netlist Instance Params         |                   |                                 |   
-| `INSTANCE_INFO__LOCAL_NET_MAP`            | String              | Maps nodes to nets (cell-local) | `'{"nwell": "nwell1", "psub": "psub", "VDD": "VDD", "vin": "vin1", "vout": "vout1", "VSS": "VSS"}'` |            |
-| `INSTANCE_INFO__GLOBAL_NET_MAP`           | String              | Maps nodes to globally resolved nets | `'{"nwell": "TOP.nwell1", "psub": "TOP.psub", "VDD": "TOP.VDD", "vin": "TOP.vin1", "vout": "TOP.vout1", "VSS": "TOP.VSS"}'` | resolved top-down by NetlistImportPlugin |
-
-#### Example 2: PCell
-
-| Property Key                              | Property Value Type | Purpose                         | Example           | Comment                         |
-|-------------------------------------------|---------------------|---------------------------------|-------------------|---------------------------------|
-| `INSTANCE_INFO__VERSION`                  | String              | Version of Instance Info Record | `'1'`             | for compatibility (migrations)  |
-| `INSTANCE_INFO__LIB_NAME`                 | String              | Library Name                    | `'SG13_dev'`      | empty for internal static cells |
-| `INSTANCE_INFO__CELL_NAME`                | String              | Cell Name                       | `'pmos'`          |                                 |
-| `INSTANCE_INFO__INSTANCE_NAME`            | String              | Instance Name                   | `'XM2'`           |                                 |
-| `INSTANCE_INFO__HIERARCHY_PATH`           | String              | Instance FQN                    | `'inverter.XM2'`  |                                 |
-| `INSTANCE_INFO__ORIGINAL_INSTANCE_PARAMS` | String              | Netlist Instance Params         | `'{"w": "120.0u", "l": "1.0u", "ng": "20", "m": "1", "mm_ok": "1"}'`                  |                                 |   
-| `INSTANCE_INFO__LOCAL_NET_MAP`            | String              | Maps nodes to nets (cell-local) | `'{"d": "vout", "g": "vin", "s": "VDD", "b": "nwell"}'` |            |
-| `INSTANCE_INFO__GLOBAL_NET_MAP`           | String              | Maps nodes to globally resolved nets | `'{"d": "TOP.vout", "g": "TOP.vin", "s": "TOP.VDD", "b": "TOP.nwell"}'` | resolved top-down by NetlistImportPlugin |
+License: GPL-3.0-or-later.

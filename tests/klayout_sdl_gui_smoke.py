@@ -31,14 +31,10 @@ expected_lines = int(required("expected_lines"))
 expected_instances = int(required("expected_instances"))
 expected_nets = int(str(globals().get("expected_nets") or 0))
 expected_pins = int(str(globals().get("expected_pins") or 0))
-expect_static = str(globals().get("expect_static") or "false").lower() == "true"
 show_manual = str(globals().get("show_manual") or "false").lower() == "true"
 run_analysis = str(globals().get("run_analysis") or "false").lower() == "true"
 expected_source_warning = str(
     globals().get("expected_source_warning") or "false"
-).lower() == "true"
-expect_sidecar_only = str(
-    globals().get("expect_sidecar_only") or "false"
 ).lower() == "true"
 
 menu = pya.MainWindow.instance().menu()
@@ -48,8 +44,6 @@ browser_action = menu.action("tools_menu.connectivity_menu.open_connectivity_bro
 assert browser_action is not None and browser_action.title == "Open Connectivity Browser", browser_action
 analysis_action = menu.action("tools_menu.connectivity_menu.run_sg13g2_sdl_analysis")
 assert analysis_action is not None and analysis_action.title == "Run SDL Analysis...", analysis_action
-attach_action = menu.action("tools_menu.connectivity_menu.attach_sdl_source")
-assert attach_action is not None and attach_action.title == "Attach SDL Source...", attach_action
 import_manual_action = menu.action("file_menu.import_menu.netlist_import_sdl_manual")
 assert import_manual_action is not None and import_manual_action.title == "Netlist Import / SDL Manual...", import_manual_action
 manual_action = menu.action("tools_menu.connectivity_menu.sdl_user_manual")
@@ -79,23 +73,10 @@ print("SDL_GUI_COUNTS instances=%d pins=%d" % (
 ), flush=True)
 if expected_pins:
     assert sum(len(info.pin_infos) for info in infos) == expected_pins
-if expect_static:
-    static = next(info for info in infos if info.hierarchy_path == "TOP.XQ1")
-    assert {pin.name for pin in static.pin_infos} == {"C", "B", "E"}
-if expect_sidecar_only:
-    # XH018 frozen OAS layouts can be inspected entirely from the SDL sidecar.
-    # Exercise cross-probing while the connectivity list contains a record
-    # without a live pya.Instance.  KLayout 0.30 raises RuntimeError if such a
-    # null direct-reference is compared with a live instance.
-    sidecar_info = next(info for info in infos if getattr(info, "inst", None) is None)
-    sidecar_id = sidecar_info.hierarchy_path or sidecar_info.inst_name
-    factory._cross_probe_finding_targets((FindingTarget("instance", sidecar_id),))
-
 factory.open_connectivity_browser()
 dialog = factory.connectivity_browser_dialog
 assert dialog is not None and dialog.isVisible()
 assert dialog.run_analysis_pb.text == "Run SDL Analysis"
-assert dialog.attach_source_pb.text == "Attach SDL Source..."
 for tree, columns in (
     (dialog.by_net_page.net_tw, 2),
     (dialog.by_net_page.detail_tw, 4),
@@ -230,12 +211,11 @@ if show_manual:
     manual.raise_()
     manual.activateWindow()
 pya.Application.instance().process_events()
-print("SDL_GUI_SMOKE_READY findings=%d selected=%d instances=%d lines=%d static=%s" % (
+print("SDL_GUI_SMOKE_READY findings=%d selected=%d instances=%d lines=%d" % (
     expected_findings,
     len(page.findings_tw.selectedItems()),
     len(infos),
     len(factory.markers_flywires),
-    str(expect_static).lower(),
 ))
 
 # Optional evidence window.  It is bounded so an interrupted coordinator can

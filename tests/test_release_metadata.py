@@ -6,17 +6,17 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_xh018_release_grain_and_runtime_payload_are_complete() -> None:
+def test_ihp_release_grain_and_runtime_payload_are_complete() -> None:
     grain = ET.parse(ROOT / "grain.xml").getroot()
     assert grain.findtext("name") == "IICSDLConnectivityInspectionPlugin"
-    assert grain.findtext("version") == "0.4"
-    assert "SG13G2 and XH018" in (grain.findtext("doc") or "")
+    assert grain.findtext("version") == "0.5"
+    assert "IHP SG13G2" in (grain.findtext("doc") or "")
     assert [
         (item.findtext("name"), item.findtext("version"))
         for item in grain.findall("depends")
     ] == [
         ("KLayoutPluginUtils", "0.28"),
-        ("IICSDLNetlistImportPlugin", "0.14"),
+        ("IICSDLNetlistImportPlugin", "0.15"),
     ]
     screenshot = base64.b64decode(grain.findtext("screenshot") or "", validate=True)
     assert screenshot.startswith(b"\xff\xd8\xff"), "Salt.Mine screenshot must be JPEG"

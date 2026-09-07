@@ -30,14 +30,14 @@ def test_qtimers_use_live_application_main_window_as_parent():
         if isinstance(node, ast.Call) and ast.unparse(node.func) == "pya.QTimer"
     ]
 
-    assert len(timer_calls) == 2
+    assert len(timer_calls) == 1
     assert all(call.args for call in timer_calls)
     assert {
         ast.unparse(call.args[0]) for call in timer_calls
     } == {"pya.Application.instance().main_window()"}
 
 
-def test_cross_probe_guards_sidecar_only_instance_before_comparison():
+def test_cross_probe_guards_missing_instance_handle_before_comparison():
     """Never compare KLayout's live Instance with a null direct-reference."""
     function = _function(_tree(), "_cross_probe_finding_targets")
 
@@ -77,7 +77,7 @@ def test_cross_probe_guards_sidecar_only_instance_before_comparison():
         if compares_live_instance and catches_runtime_error:
             guarded_comparisons.append(node)
 
-    assert null_guards, "sidecar-only info.inst=None must be skipped"
+    assert null_guards, "missing info.inst handle must be skipped"
     assert guarded_comparisons, "KLayout direct-reference equality must catch RuntimeError"
     assert min(node.lineno for node in null_guards) < min(
         node.lineno for node in guarded_comparisons

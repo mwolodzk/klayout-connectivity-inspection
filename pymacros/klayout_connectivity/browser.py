@@ -437,7 +437,6 @@ class ConnectivityBrowserDialog(pya.QDialog):
     def __init__(self, parent=None, refresh_callback: Optional[Callable] = None,
                  findings_selection_callback: Optional[Callable[[FindingSelection], None]] = None,
                  analysis_callback: Optional[Callable] = None,
-                 source_callback: Optional[Callable] = None,
                  instance_selection_callback: Optional[Callable] = None):
         super().__init__(parent)
         self.refresh_callback = refresh_callback
@@ -447,7 +446,6 @@ class ConnectivityBrowserDialog(pya.QDialog):
         self.findings_model = FindingsModel()
         self.findings_selection_callback = findings_selection_callback
         self.analysis_callback = analysis_callback
-        self.source_callback = source_callback
         self.instance_selection_callback = instance_selection_callback
         self._init_ui()
 
@@ -485,11 +483,6 @@ class ConnectivityBrowserDialog(pya.QDialog):
         bottom = pya.QHBoxLayout()
         self.refresh_pb = pya.QPushButton("Refresh")
         bottom.addWidget(self.refresh_pb)
-        self.attach_source_pb = pya.QPushButton("Attach SDL Source...")
-        self.attach_source_pb.setToolTip(
-            "Select an Xschem schematic or SPICE/CDL netlist without importing or regenerating layout instances"
-        )
-        bottom.addWidget(self.attach_source_pb)
         self.run_analysis_pb = pya.QPushButton("Run SDL Analysis")
         self.run_analysis_pb.setToolTip(
             "Read the saved layout, extract observed connectivity and compare it with the attached source; the layout is never written"
@@ -501,7 +494,6 @@ class ConnectivityBrowserDialog(pya.QDialog):
         layout.addLayout(bottom)
 
         self.refresh_pb.clicked.connect(self.on_refresh)
-        self.attach_source_pb.clicked.connect(self.on_attach_source)
         self.run_analysis_pb.clicked.connect(self.on_run_analysis)
         self.close_pb.clicked.connect(self.on_close)
 
@@ -539,16 +531,8 @@ class ConnectivityBrowserDialog(pya.QDialog):
 
     def set_analysis_running(self, running: bool) -> None:
         self.run_analysis_pb.setEnabled(not running)
-        self.attach_source_pb.setEnabled(not running)
         self.run_analysis_pb.setText(
             "SDL Analysis is running..." if running else "Run SDL Analysis"
-        )
-
-    def set_source_attaching(self, running: bool) -> None:
-        self.attach_source_pb.setEnabled(not running)
-        self.run_analysis_pb.setEnabled(not running)
-        self.attach_source_pb.setText(
-            "Attaching SDL Source..." if running else "Attach SDL Source..."
         )
 
     def select_findings(self, identifiers: Iterable[str]) -> FindingSelection:
@@ -585,10 +569,6 @@ class ConnectivityBrowserDialog(pya.QDialog):
             debug("ConnectivityBrowserDialog.on_refresh")
         if self.refresh_callback is not None:
             self.refresh_callback()
-
-    def on_attach_source(self):
-        if self.source_callback is not None:
-            self.source_callback()
 
     def on_run_analysis(self):
         if self.analysis_callback is not None:
